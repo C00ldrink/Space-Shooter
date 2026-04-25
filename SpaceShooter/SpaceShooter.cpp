@@ -9,6 +9,9 @@ using namespace sf;
 
 Vector2u windowSize;
 
+const float Drone_Vy = 0.1f;
+const float Bullet_speed = 0.3f;
+
 class Entity {
 	float xPos;
 	float yPos;
@@ -214,7 +217,7 @@ public:
 				temp[i] = DroneBullets[i];
 			}
 
-			temp[DroneBulletsCount] = new Bullet(3, false, Bounds.left + (Bounds.width / 2.0f),Bounds.top+Bounds.height, 0.5f, .30f, "Images/Player/Powerful-Laser-Beam-Eyes-Vision-PNG.png");
+			temp[DroneBulletsCount] = new Bullet(3, false, Bounds.left + (Bounds.width / 2.0f),Bounds.top+Bounds.height, 0.5f, Bullet_speed, "Images/Player/Powerful-Laser-Beam-Eyes-Vision-PNG.png");
 			temp[DroneBulletsCount]->SetScale(0.2f, -0.15f);
 			temp[DroneBulletsCount]->SetOrigin();
 			temp[DroneBulletsCount]->setPosition();
@@ -291,6 +294,8 @@ void collisionsManager(Player& Me,Enemy* drone) {
 		}
 	}
 }
+
+
 int main()
 {
 
@@ -299,7 +304,7 @@ int main()
 	windowSize = window.getSize();
 
 	Enemy** enemy = new Enemy * [1];
-	enemy[0] = new Drone{ 100, 100, 0.1f, 0, 1, "Images/Enemy/drone.png" };
+	enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1, "Images/Enemy/drone.png" };
 	while (window.isOpen()) {
 		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
 		//FloatRect Dronebounds = drone.getSprite().getGlobalBounds();
