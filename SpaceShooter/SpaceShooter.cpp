@@ -1,16 +1,52 @@
 #include <iostream>
+#ifdef _WIN32
 #include <SFML\Graphics.hpp>
 #include <SFML\Audio.hpp>
 #include <SFML\Window.hpp>
-#include<SFML\System.hpp>
+#include <SFML\System.hpp>
+
+const sf::String kAssetRoot = "..\\Images\\";
+#else
+#include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
+#include <SFML/Window.hpp>
+#include <SFML/System.hpp>
+
+const sf::String kAssetRoot = "../SpaceShooter/Images/";
+#endif
 
 using namespace std;
 using namespace sf;
 
+<<<<<<< HEAD
 Vector2u windowSize;
 
 const float Drone_Vy = 0.1f;
 const float Bullet_speed = 0.3f;
+=======
+String platPath(String path) {
+	int size = path.getSize();
+#ifdef _WIN32
+	for (int i = 0; i < size; ++i)
+		if (path[i] == '/')
+			path[i] = '\\';
+#else
+	for (int i = 0; i < size; ++i)
+		if (path[i] == '\\') 
+			path[i] = '/';
+#endif
+	return path;
+}
+
+String resolvePath(const String& relative) {
+	return platPath(kAssetRoot + relative);
+}
+
+const String kPlayerTexturePath = resolvePath("Player/defaultPlayer.png");
+const String kBulletTexturePath = resolvePath("Player/defaultBullet.png");
+// --- yaha tak. This is path resolving to make it compatible for both mac vs code and windows vs studio
+// do lmk if this does not work for you, i have tried to suit to your expected project and binary root directory
+>>>>>>> main
 
 class Entity {
 	float xPos;
@@ -45,8 +81,9 @@ public:
 		}
 		return *this;
 	}
-	bool loadTexture(const string& filename) {
+	bool loadTexture(const String& filename) {
 		if (!Tex.loadFromFile(filename)) {
+			cout << "Failed to load texture: " << filename.toAnsiString() << endl; //sf::String does not even have << ostream operator overloading. Skill issue?
 			return false; 
 		}
 		sprite.setTexture(Tex);
@@ -79,12 +116,46 @@ public:
 		window.draw(sprite);
 	}
 };
+<<<<<<< HEAD
+=======
+class Player : public Entity {
+	int lives;
+public:
+	Player(int lives, float xPos, float yPos, float V_x, float V_y,const String& filename):Entity(xPos,yPos,V_x,V_y) {
+		this->lives = lives;
+		this->loadTexture(filename);
+		
+
+	}
+	~Player() {
+
+	}
+
+	void SetOrigin() {
+		this->getSprite().setOrigin(this->getSprite().getLocalBounds().width / 2, this->getSprite().getLocalBounds().height / 2);
+	}
+	void SetScale(float x,float y) {
+		this->getSprite().setScale(x, y);
+	}
+	void moveRight() {
+		this->getSprite().move(this->getVx(), 0);
+	}
+	void moveLeft() {
+		this->getSprite().move(-this->getVx(), 0);
+	}
+};
+
+>>>>>>> main
 class Bullet :public Entity {
 	int damage;
 	bool pierceFlag;
 public:
 	Bullet() {}
+<<<<<<< HEAD
 	Bullet(int d, bool pierce, float xPos, float yPos, float V_x, float V_y, const string& filename) :Entity(xPos, yPos, V_x, V_y) {
+=======
+	Bullet(int d,bool pierce, float xPos, float yPos, float V_x, float V_y, const String& filename) :Entity(xPos, yPos, V_x, V_y) {
+>>>>>>> main
 		damage = d;
 		pierceFlag = pierce;
 		this->loadTexture(filename);
@@ -134,6 +205,7 @@ public:
 			temp[i] = PlayerBullets[i];
 		}
 
+<<<<<<< HEAD
 		temp[PlayerBulletCount] = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, .30f, "Images/Player/Powerful-Laser-Beam-Eyes-Vision-PNG.png");
 		temp[PlayerBulletCount]->SetScale(0.2f, 0.15f);
 		temp[PlayerBulletCount]->SetOrigin();
@@ -150,6 +222,56 @@ public:
 		Entity::draw(window);
 		for (int i = 0; i < PlayerBulletCount; i++) {
 			PlayerBullets[i]->draw(window);
+=======
+int main()
+{
+	RenderWindow window(VideoMode::getDesktopMode(), "SFML Works!", Style::Fullscreen);
+	
+	Player Me(3,window.getSize().x/2, window.getSize().y/1.1, .5f, .5f, kPlayerTexturePath);
+
+	Me.SetOrigin();
+	Me.SetScale(.2f, .2f);
+	Me.setPosition();
+
+	Bullet** PlayerBullets = nullptr;
+	int PlayerBulletCount = 0;
+	
+	Vector2u windowSize = window.getSize();
+
+	while (window.isOpen()) {
+		FloatRect bounds = Me.getSprite().getGlobalBounds();
+		Event event;
+
+		while (window.pollEvent(event)) {
+			if (event.type == Event::Closed) {
+				window.close();
+			}
+			if (Keyboard::isKeyPressed(Keyboard::P)) {
+				window.close();
+			}
+			if (event.type == Event::KeyPressed && event.key.code == Keyboard::Space) {
+				
+				Bullet** temp = new Bullet*[PlayerBulletCount+1];
+				for (int i = 0; i < PlayerBulletCount; i++) {
+					temp[i] = PlayerBullets[i];
+				}
+				
+				temp[PlayerBulletCount] = new Bullet(3, false, bounds.left + (bounds.width / 2.0f), bounds.top, 0.5f, .30f, kBulletTexturePath);
+				temp[PlayerBulletCount]->SetScale(0.2f, 0.15f);
+				temp[PlayerBulletCount]->SetOrigin();
+				temp[PlayerBulletCount]->setPosition();
+				delete[] PlayerBullets;
+				PlayerBullets = temp;    
+				PlayerBulletCount++;
+			}
+		}
+		
+		if (Keyboard::isKeyPressed(Keyboard::D) && bounds.left + bounds.width < window.getSize().x) {
+				Me.moveRight();
+		}
+		if (Keyboard::isKeyPressed(Keyboard::A) && bounds.left > 0) {
+			Me.moveLeft();
+>>>>>>> main
 		}
 	}
 	void update() {

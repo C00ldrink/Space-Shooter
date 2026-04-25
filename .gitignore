@@ -1,0 +1,6 @@
+SpaceShooter/x64*
+SpaceShooter/SpaceShooter.v*
+build*
+output*
+lib*
+CMakeLists.txt
