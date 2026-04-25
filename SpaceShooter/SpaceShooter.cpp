@@ -1,12 +1,45 @@
-
 #include <iostream>
+#ifdef _WIN32
 #include <SFML\Graphics.hpp>
 #include <SFML\Audio.hpp>
 #include <SFML\Window.hpp>
-#include<SFML\System.hpp>
+#include <SFML\System.hpp>
+
+const sf::String kAssetRoot = "..\\Images\\";
+#else
+#include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
+#include <SFML/Window.hpp>
+#include <SFML/System.hpp>
+
+const sf::String kAssetRoot = "../SpaceShooter/Images/";
+#endif
 
 using namespace std;
 using namespace sf;
+
+String platPath(String path) {
+	int size = path.getSize();
+#ifdef _WIN32
+	for (int i = 0; i < size; ++i)
+		if (path[i] == '/')
+			path[i] = '\\';
+#else
+	for (int i = 0; i < size; ++i)
+		if (path[i] == '\\') 
+			path[i] = '/';
+#endif
+	return path;
+}
+
+String resolvePath(const String& relative) {
+	return platPath(kAssetRoot + relative);
+}
+
+const String kPlayerTexturePath = resolvePath("Player/defaultPlayer.png");
+const String kBulletTexturePath = resolvePath("Player/defaultBullet.png");
+// --- yaha tak. This is path resolving to make it compatible for both mac vs code and windows vs studio
+// do lmk if this does not work for you, i have tried to suit to your expected project and binary root directory
 
 class Entity {
 	float xPos;
@@ -41,8 +74,9 @@ public:
 		}
 		return *this;
 	}
-	bool loadTexture(const string& filename) {
+	bool loadTexture(const String& filename) {
 		if (!Tex.loadFromFile(filename)) {
+			cout << "Failed to load texture: " << filename.toAnsiString() << endl; //sf::String does not even have << ostream operator overloading. Skill issue?
 			return false; 
 		}
 		sprite.setTexture(Tex);
@@ -73,7 +107,7 @@ public:
 class Player : public Entity {
 	int lives;
 public:
-	Player(int lives, float xPos, float yPos, float V_x, float V_y,const string& filename):Entity(xPos,yPos,V_x,V_y) {
+	Player(int lives, float xPos, float yPos, float V_x, float V_y,const String& filename):Entity(xPos,yPos,V_x,V_y) {
 		this->lives = lives;
 		this->loadTexture(filename);
 		
@@ -102,7 +136,7 @@ class Bullet :public Entity {
 	bool pierceFlag;
 public:
 	Bullet() {}
-	Bullet(int d,bool pierce, float xPos, float yPos, float V_x, float V_y, const string& filename) :Entity(xPos, yPos, V_x, V_y) {
+	Bullet(int d,bool pierce, float xPos, float yPos, float V_x, float V_y, const String& filename) :Entity(xPos, yPos, V_x, V_y) {
 		damage = d;
 		pierceFlag = pierce;
 		this->loadTexture(filename);
@@ -123,9 +157,9 @@ public:
 
 int main()
 {
-
 	RenderWindow window(VideoMode::getDesktopMode(), "SFML Works!", Style::Fullscreen);
-	Player Me(3,window.getSize().x/2, window.getSize().y/1.1, .5f, .5f, "C:/Users/Administrator/source/repos/SpaceShooter/SpaceShooter/Images/Player/pngegg (4).png");
+	
+	Player Me(3,window.getSize().x/2, window.getSize().y/1.1, .5f, .5f, kPlayerTexturePath);
 
 	Me.SetOrigin();
 	Me.SetScale(.2f, .2f);
@@ -154,7 +188,7 @@ int main()
 					temp[i] = PlayerBullets[i];
 				}
 				
-				temp[PlayerBulletCount] = new Bullet(3, false, bounds.left + (bounds.width / 2.0f), bounds.top, 0.5f, .30f, "C:/Users/Administrator/source/repos/SpaceShooter/SpaceShooter/Images/Player/Powerful-Laser-Beam-Eyes-Vision-PNG.png");
+				temp[PlayerBulletCount] = new Bullet(3, false, bounds.left + (bounds.width / 2.0f), bounds.top, 0.5f, .30f, kBulletTexturePath);
 				temp[PlayerBulletCount]->SetScale(0.2f, 0.15f);
 				temp[PlayerBulletCount]->SetOrigin();
 				temp[PlayerBulletCount]->setPosition();
