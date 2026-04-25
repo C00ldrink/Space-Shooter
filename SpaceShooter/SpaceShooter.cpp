@@ -6,13 +6,18 @@
 #include <SFML\System.hpp>
 
 const sf::String kAssetRoot = "./";
+
 #else
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <SFML/Window.hpp>
 #include <SFML/System.hpp>
 
+<<<<<<< HEAD
 const sf::String kAssetRoot = "../../SpaceShooter/";
+=======
+const sf::String kAssetRoot = "../SpaceShooter/";
+>>>>>>> 59e84c1d8bb37b0fe727fc3c66018d70c88a0bfe
 #endif
 
 using namespace std;
@@ -33,6 +38,7 @@ const String kDroneTexturePath = resolvePath("Images/Enemy/defaultDrone.png");
 
 // --- yaha tak. This is path resolving to make it compatible for both mac vs code and windows vs studio
 // do lmk if this does not work for you, i have tried to suit to your expected project and binary root directory
+
 
 
 class Entity {
@@ -103,13 +109,15 @@ public:
 		window.draw(sprite);
 	}
 };
+
 class Bullet :public Entity {
 	int damage;
 	bool pierceFlag;
 public:
 	Bullet() {}
 
-	Bullet(int d,bool pierce, float xPos, float yPos, float V_x, float V_y, const String& filename) :Entity(xPos, yPos, V_x, V_y) {
+	Bullet(int d, bool pierce, float xPos, float yPos, float V_x, float V_y, const String& filename) :Entity(xPos, yPos, V_x, V_y) {
+
 		damage = d;
 		pierceFlag = pierce;
 		this->loadTexture(filename);
@@ -122,6 +130,7 @@ public:
 	}
 
 };
+
 class Player : public Entity {
 	static int lives;
 	Bullet** PlayerBullets;
@@ -136,10 +145,12 @@ public:
 		this->setPosition();
 	}
 	~Player() {
-		for (int i = 0; i < PlayerBulletCount; i++) {
-			delete PlayerBullets[i];
+		if (PlayerBullets) {
+			for (int i = 0; i < PlayerBulletCount; i++) {
+				delete PlayerBullets[i];
+			}
+			delete[] PlayerBullets;
 		}
-		delete[] PlayerBullets;
 	}
 	void moveRight() {
 		this->getSprite().move(this->getVx(), 0);
@@ -158,6 +169,7 @@ public:
 		for (int i = 0; i < PlayerBulletCount; i++) {
 			temp[i] = PlayerBullets[i];
 		}
+
 		temp[PlayerBulletCount] = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, .30f, kBulletTexturePath);
 		temp[PlayerBulletCount]->SetScale(0.2f, 0.15f);
 		temp[PlayerBulletCount]->SetOrigin();
@@ -183,11 +195,14 @@ public:
 		for (int i = 0; i < PlayerBulletCount; i++) {
 			if (PlayerBullets[i]->getSprite().getGlobalBounds().top <= 0) {
 				delete PlayerBullets[i];
-				Bullet** temp = new Bullet * [PlayerBulletCount - 1];
-				for (int j = 0, k = 0; j < PlayerBulletCount; j++) {
-					if (i == j)
-						continue;
-					temp[k++] = PlayerBullets[j];
+				Bullet** temp = nullptr;
+				if (PlayerBulletCount > 1) {
+					temp = new Bullet * [PlayerBulletCount - 1];
+					for (int j = 0, k = 0; j < PlayerBulletCount; j++) {
+						if (i == j)
+							continue;
+						temp[k++] = PlayerBullets[j];
+					}
 				}
 				delete[] PlayerBullets;
 				PlayerBullets = temp;
@@ -200,11 +215,13 @@ public:
 		return PlayerBulletCount;
 	}
 };
+
 int Player::lives = 5;
+
 class Enemy : public Entity {
 	int health;
 public:
-	Enemy(float x, float y, float Vy, float Vx, int health, const string& filename) :Entity(x, y, Vx, Vy) {
+	Enemy(float x, float y, float Vy, float Vx, int health, const String& filename) :Entity(x, y, Vx, Vy) {
 		this->health = health;
 		this->loadTexture(filename);
 	}
@@ -218,7 +235,9 @@ public:
 	virtual Bullet** getBullets() = 0;
 
 	virtual void draw(RenderWindow& window) = 0;
+	virtual ~Enemy() {} //warning aa rahi thi to bana dia
 };
+
 class Drone : public Enemy {
 	 Clock clock; 
 	 Bullet** DroneBullets;
@@ -240,7 +259,6 @@ public:
 			for (int i = 0; i < DroneBulletsCount; i++) {
 				temp[i] = DroneBullets[i];
 			}
-
 			temp[DroneBulletsCount] = new Bullet(3, false, Bounds.left + (Bounds.width / 2.0f),Bounds.top+Bounds.height, 0.5f, Bullet_speed, kBulletTexturePath);
 			temp[DroneBulletsCount]->SetScale(0.2f, -0.15f);
 			temp[DroneBulletsCount]->SetOrigin();
@@ -254,10 +272,10 @@ public:
 			clock.restart();
 		}
 	}
-	Bullet** getBullets() {
+	Bullet** getBullets() override {
 		return DroneBullets;
 	}
-	void update() {
+	void update() override {
 
 		for (int i = 0; i < DroneBulletsCount; i++) {
 			DroneBullets[i]->moveDown();
@@ -266,13 +284,14 @@ public:
 		for (int i = 0; i < DroneBulletsCount; i++) {
 			if (DroneBullets[i]->getSprite().getGlobalBounds().top >= windowSize.y) {
 				delete DroneBullets[i];
-				Bullet** temp = new Bullet * [DroneBulletsCount - 1];
-		
-				for (int j = 0, k = 0; j < DroneBulletsCount; j++) {
-					if (i == j)
-						continue;
-					temp[k] = DroneBullets[j];
-					k++;
+				Bullet** temp = nullptr;
+				if (DroneBulletsCount > 1) {
+					temp = new Bullet * [DroneBulletsCount - 1];
+					for (int j = 0, k = 0; j < DroneBulletsCount; j++) {
+						if (i == j)
+							continue;
+						temp[k++] = DroneBullets[j];
+					}
 				}
 				delete[] DroneBullets;
 				DroneBullets = temp;
@@ -284,24 +303,27 @@ public:
 		}
 		
 	}
-	void draw(RenderWindow & window) {
+	void draw(RenderWindow & window) override {
 		Entity::draw(window);
 		for (int i = 0; i < DroneBulletsCount; i++) {
 			DroneBullets[i]->draw(window);
 		}
 	}
-	int getBulletCount() {
+	int getBulletCount() override {
 		return DroneBulletsCount;
 	}
 	~Drone() {
-		for (int i = 0; i < DroneBulletsCount; i++) {
-			delete DroneBullets[i];
+		if (DroneBullets) {
+			for (int i = 0; i < DroneBulletsCount; i++) {
+				delete DroneBullets[i];
+			}
+			delete[] DroneBullets;
 		}
-		delete[] DroneBullets;
 	}
 
 };
-void collisionsManager(Player& Me,Enemy* drone) {
+
+void collisionsManager(Player& Me, Enemy* drone) {
 
 	FloatRect P = Me.getSprite().getGlobalBounds();
 	FloatRect E = drone->getSprite().getGlobalBounds();
@@ -319,37 +341,21 @@ void collisionsManager(Player& Me,Enemy* drone) {
 	}
 }
 
-
 int main()
 {
-
 	RenderWindow window(VideoMode::getDesktopMode(), "SFML Works!", Style::Fullscreen);
-	Player Me(window.getSize().x/2, window.getSize().y/1.1, .5f, .5f, kPlayerTexturePath);
+
 	windowSize = window.getSize();
+
+	Player Me(windowSize.x/2, windowSize.y/1.1, .5f, .5f, kPlayerTexturePath);
 
 	Enemy** enemy = new Enemy * [1];
 	enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1,kDroneTexturePath};
+
 	while (window.isOpen()) {
 		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
-		//FloatRect Dronebounds = drone.getSprite().getGlobalBounds();
 		Event event;
-		//Implementing enemy drone
 
-		for (int i = 0; i < 1; i++) {
-			enemy[i]->move();
-			if (enemy[i]->getSprite().getGlobalBounds().top + enemy[i]->getSprite().getGlobalBounds().height >= window.getSize().y) {
-				cout << "Drone deleted\n";
-				cout << "Player died\n";
-			}
-			//Firing
-			enemy[i]->shoot(enemy[i]->getSprite().getGlobalBounds());
-			enemy[i]->update();
-		}
-
-
-			//
-
-		//
 		while (window.pollEvent(event)) {
 			if (event.type == Event::Closed) {
 				window.close();
@@ -362,26 +368,38 @@ int main()
 			}
 		}
 		
-		if (Keyboard::isKeyPressed(Keyboard::D) && Mybounds.left + Mybounds.width < window.getSize().x) {
+		for (int i = 0; i < 1; i++) {
+			enemy[i]->move();
+			if (enemy[i]->getSprite().getGlobalBounds().top + enemy[i]->getSprite().getGlobalBounds().height >= windowSize.y) {
+				cout << "Drone deleted\n";
+				cout << "Player died\n";
+			}
+			enemy[i]->shoot(enemy[i]->getSprite().getGlobalBounds());
+			enemy[i]->update();
+		}
+
+		if (Keyboard::isKeyPressed(Keyboard::D) && Mybounds.left + Mybounds.width < windowSize.x) {
 				Me.moveRight();
 		}
 		if (Keyboard::isKeyPressed(Keyboard::A) && Mybounds.left > 0) {
 			Me.moveLeft();
 		}
 		
-
 		Me.update();
 
 		for (int i = 0; i < 1; i++) {
-			collisionsManager(Me,enemy[i]);
+			collisionsManager(Me, enemy[i]);
 		}
 
 		window.clear();
 		Me.draw(window);
-		for(int i=0;i < 1;i++)
-		enemy[i]->draw(window);
+		for(int i = 0; i < 1; i++)
+			enemy[i]->draw(window);
 		window.display();
-		
     }
+
+	delete enemy[0];
+	delete[] enemy;
 	
+	return 0;
 }
