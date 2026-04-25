@@ -5,39 +5,25 @@
 #include <SFML\Window.hpp>
 #include <SFML\System.hpp>
 
-const sf::String kAssetRoot = "..\\Images\\";
+const sf::String kAssetRoot = "../";
 #else
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <SFML/Window.hpp>
 #include <SFML/System.hpp>
 
-const sf::String kAssetRoot = "../SpaceShooter/Images/";
+const sf::String kAssetRoot = "../SpaceShooter/";
 #endif
 
 using namespace std;
 using namespace sf;
 
-String platPath(String path) {
-	int size = path.getSize();
-#ifdef _WIN32
-	for (int i = 0; i < size; ++i)
-		if (path[i] == '/')
-			path[i] = '\\';
-#else
-	for (int i = 0; i < size; ++i)
-		if (path[i] == '\\') 
-			path[i] = '/';
-#endif
-	return path;
-}
-
 String resolvePath(const String& relative) {
-	return platPath(kAssetRoot + relative);
+	return kAssetRoot + relative;
 }
 
-const String kPlayerTexturePath = resolvePath("Player/defaultPlayer.png");
-const String kBulletTexturePath = resolvePath("Player/defaultBullet.png");
+const String kPlayerTexturePath = resolvePath("Images/Player/defaultPlayer.png");
+const String kBulletTexturePath = resolvePath("Images/Player/defaultBullet.png");
 // --- yaha tak. This is path resolving to make it compatible for both mac vs code and windows vs studio
 // do lmk if this does not work for you, i have tried to suit to your expected project and binary root directory
 
