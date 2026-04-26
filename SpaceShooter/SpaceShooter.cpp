@@ -29,8 +29,15 @@ Vector2u windowSize;
 const float Drone_Vy = 0.1f;
 const float Bullet_speed = 0.3f;
 const float viper_Vy = 0.1f;
-const float amplitude = 100.f;
-const float frequency = 0.1f;
+const float viper_Amp = 100.f;
+const float viper_Freq = 0.1f;
+const float seeker_Scale = 0.2f;
+const float drone_Scale = 0.1f;
+const float viper_Scale = 0.05f;
+const float player_Scale = 0.2f;
+const float seeker_Speed = 0.3f;
+const double pi = 3.14159;
+
 
 String resolvePath(const String& relative) {
 	return kAssetRoot + relative;
@@ -40,6 +47,7 @@ const String kPlayerTexturePath = resolvePath("Images/Player/defaultPlayer.png")
 const String kBulletTexturePath = resolvePath("Images/Player/defaultBullet.png");
 const String kDroneTexturePath = resolvePath("Images/Enemy/defaultDrone.png");
 const String kViperTexturePath = resolvePath("Images/Enemy/defaultViper.png");
+const String kSeekerTexturePath = resolvePath("Images/Enemy/defaultSeeker.png");
 const String ExpolsionTexturePath = resolvePath("Images/defaultExplosion.png");
 IntRect ExplosionFrames(0, 0, 182, 182);
 const int explosionFrames = 7;
@@ -97,6 +105,12 @@ public:
 	}
 	void setY(float y) {
 		yPos = y;
+	}
+	void setVx(float v) {
+		V_x = v;
+	}
+	void setVy(float v) {
+		V_y = v;
 	}
 	void setPosition() {
 		sprite.setPosition(xPos, yPos);
@@ -161,7 +175,7 @@ class ShootableCharacter : public Entity {
 protected:
 	Clock  clock;
 	Bullet** bullets;
-	int    bulletCount;
+	int bulletCount;
 
 public:
 	ShootableCharacter()
@@ -230,10 +244,9 @@ public:
 		: ShootableCharacter(xPos, yPos, V_x, V_y) {
 		this->loadTexture(filename);
 		this->SetOrigin();
-		this->SetScale(.2f, .2f);
+		this->SetScale(player_Scale, player_Scale);
 		this->setPosition();
 	}
-
 	void moveRight() {
 		this->getSprite().move(this->getVx(), 0);
 	}
@@ -309,7 +322,7 @@ public:
 		: Enemy(x, y, Vy, Vx, health, filename) {
 		this->SetOrigin();
 		this->setPosition();
-		this->SetScale(0.1f, 0.1f);
+		this->SetScale(drone_Scale, drone_Scale);
 	}
 
 	void move() override {
@@ -352,13 +365,13 @@ public:
 	Viper(float x, float y, float Vy, float Vx, int health, const String& filename): Enemy(x, y, Vy, Vx, health, filename) {
 		this->SetOrigin();
 		this->setPosition();
-		this->SetScale(0.05f, -0.05f);
+		this->SetScale(viper_Scale, -viper_Scale);
 		currentY = y;
 		time = 0;
 	}
 	void move() override {
 		time += 0.05f;
-		float x = getxPos() + amplitude * sin(time * frequency);
+		float x = getxPos() + viper_Amp * sin(time * viper_Freq);
 		currentY += getVy();
 		this->getSprite().setPosition(x, currentY);
 	}
@@ -372,7 +385,6 @@ public:
 			clock.restart();
 		}
 	}
-
 	void update() override {
 		for (int i = 0; i < bulletCount; i++) {
 			bullets[i]->moveDown();
@@ -390,6 +402,34 @@ public:
 
 };
 
+class Seeker :public Enemy {
+	float lockedX;
+   double theta;
+public:
+
+	Seeker(float lockedX,float lockedY,float x, float y, float Vy, float Vx, int health, const String& filename) : Enemy(x, y, Vy, Vx, health, filename) {
+		this->SetOrigin();
+		this->setPosition();
+		this->SetScale(seeker_Scale, seeker_Scale);
+		this->lockedX = lockedX;
+		theta = atan2((double)(lockedY-y), (double)(lockedX - x));
+		setVx(seeker_Speed * cos(theta));
+		setVy(seeker_Speed * sin(theta));
+		this->getSprite().setRotation(theta*((double)180 / pi)-90);
+	}
+	void move() override {
+		this->getSprite().move(getVx(), getVy());
+	}
+	inline void shoot(FloatRect Bounds)override{
+	 
+	
+	}
+	inline void update() override{}
+	void draw(RenderWindow& window) override {
+		Entity::draw(window);
+	}
+};
+
 void collisionsManager(Player& Me, Enemy**& drone) {
 	for (int k = 0; k < 1; k++) {
 		FloatRect P = Me.getSprite().getGlobalBounds();
@@ -397,14 +437,13 @@ void collisionsManager(Player& Me, Enemy**& drone) {
 		Bullet** MyBullets_Boundary = Me.getPlayerBullets();
 		Bullet** EnemyBullets_Boundary = drone[k]->getBullets();
 
-		for (int i = 0; i < drone[k]->getBulletCount(); i++) {
+		for (int i = 0; i < drone[k]->getBulletCount(); i++) { // check collision of enemy bullets with player
 			if (EnemyBullets_Boundary[i]->getSprite().getGlobalBounds().intersects(P)) {
-				drone[i]->deleteBullet(i);
+				drone[k]->deleteBullet(i);
 				Player::takeDamage();
 			}
 		}
-
-		for (int i = 0; i < Me.getBulletCount(); i++) {
+		for (int i = 0; i < Me.getBulletCount(); i++) { //check Collision of Player bullets with enemy
 			if (MyBullets_Boundary[i]->getSprite().getGlobalBounds().intersects(E) && !(drone[k]->checkStatus())) {
 				Me.deleteBullet(i);
 				drone[k]->destroy();
@@ -414,7 +453,9 @@ void collisionsManager(Player& Me, Enemy**& drone) {
 				}
 			}
 		}
-
+		if (E.intersects(P)) {//check collision of player and enemies
+			cout << "Player Died\n";
+		}
 		if (drone[k]->checkStatus()) {
 			// Implement explosion animation here
 		}
@@ -422,7 +463,6 @@ void collisionsManager(Player& Me, Enemy**& drone) {
 			drone[k]->move();
 			if (drone[k]->getSprite().getGlobalBounds().top + drone[k]->getSprite().getGlobalBounds().height >= windowSize.y) {
 				cout << "Drone deleted\n";
-				cout << "Player died\n";
 			}
 			drone[k]->shoot(drone[k]->getSprite().getGlobalBounds());
 			drone[k]->update();
@@ -433,12 +473,12 @@ void collisionsManager(Player& Me, Enemy**& drone) {
 int main()
 {
 	RenderWindow window(VideoMode::getDesktopMode(), "SFML Works!", Style::Fullscreen);
-
 	windowSize = window.getSize();
-
-	Player Me(windowSize.x / 2, windowSize.y / 1.1f, .5f, .5f, kPlayerTexturePath);
+	Player Me(windowSize.x/2, windowSize.y / 1.1f, .5f, .5f, kPlayerTexturePath);
 	Enemy** enemy = new Enemy * [1];
-	enemy[0] = new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath };
+	enemy[0] = new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
+	//enemy[0] = new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath }; // Viper
+	//enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1, kDroneTexturePath }; // Drone
 
 	while (window.isOpen()) {
 		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
