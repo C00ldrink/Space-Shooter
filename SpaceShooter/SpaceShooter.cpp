@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <cmath>
 #ifdef _WIN32
 #include <SFML\Graphics.hpp>
@@ -26,16 +26,18 @@ using namespace sf;
 
 Vector2u windowSize;
 
-const float Drone_Vy = 0.1f;
-const float Bullet_speed = 0.3f;
-const float viper_Vy = 0.1f;
-const float viper_Amp = 100.f;
+const float Drone_Vy = 0.08f;
+const float cruiserSpeed = 0.3f;
+const float Bullet_speed = 0.4f;
+const float viper_Vy = 0.08f;
+const float viper_Amp = 60.f;   // smaller sine wave amplitude
+const float seeker_Speed = 0.2f;
 const float viper_Freq = 0.1f;
-const float seeker_Scale = 0.2f;
-const float drone_Scale = 0.1f;
-const float viper_Scale = 0.05f;
-const float player_Scale = 0.2f;
-const float seeker_Speed = 0.3f;
+const float drone_Scale = 0.06f;
+const float viper_Scale = 0.03f;
+const float cruiser_Scale = 0.12f;
+const float seeker_Scale = 0.12f;
+const float player_Scale = 0.12f;
 const double pi = 3.14159;
 
 
@@ -49,6 +51,10 @@ const String kDroneTexturePath = resolvePath("Images/Enemy/defaultDrone.png");
 const String kViperTexturePath = resolvePath("Images/Enemy/defaultViper.png");
 const String kSeekerTexturePath = resolvePath("Images/Enemy/defaultSeeker.png");
 const String ExpolsionTexturePath = resolvePath("Images/defaultExplosion.png");
+const String kCruiserTexturePath = resolvePath("Images/Enemy/defaultCruiser.png");
+const String kCruiserLaserTexturePath = resolvePath("Images/Enemy/cruiserLaser.png");
+
+
 IntRect ExplosionFrames(0, 0, 182, 182);
 const int explosionFrames = 7;
 
@@ -121,11 +127,6 @@ public:
 	void SetScale(float x, float y) {
 		sprite.setScale(x, y);
 	}
-	void destroy() {
-		this->loadTexture(ExpolsionTexturePath, ExplosionFrames);
-		SetScale(0.7f, 0.7f);
-		SetOrigin();
-	}
 	~Entity() {
 	}
 	float getVy() const {
@@ -173,6 +174,7 @@ public:
 
 class ShootableCharacter : public Entity {
 protected:
+	int  health;
 	Clock  clock;
 	Bullet** bullets;
 	int bulletCount;
@@ -182,8 +184,8 @@ public:
 		: Entity(), bullets(nullptr), bulletCount(0) {
 	}
 
-	ShootableCharacter(float xPos, float yPos, float V_x, float V_y)
-		: Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0) {
+	ShootableCharacter(float xPos, float yPos, float V_x, float V_y,int health): Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0) {
+		this->health = health;
 	}
 
 	virtual ~ShootableCharacter() {
@@ -211,6 +213,7 @@ public:
 		delete[] bullets;
 		bullets = temp;
 		bulletCount++;
+		cout << "Bullet " << bulletCount << " added\n";
 	}
 
 	void deleteBullet(int i) {
@@ -227,6 +230,7 @@ public:
 		delete[] bullets;
 		bullets = temp;
 		bulletCount--;
+		cout << "Bullet deleted\n";
 	}
 
 	void drawBullets(RenderWindow& window) {
@@ -234,14 +238,26 @@ public:
 			bullets[i]->draw(window);
 		}
 	}
+
+	void destroy() {
+		this->loadTexture(ExpolsionTexturePath, ExplosionFrames);
+		SetScale(0.7f, 0.7f);
+		SetOrigin();
+	}
+	void takeDamage() {
+		health--;
+		if (health == 0) {
+			this->destroy();
+		}
+	}
 	
 };
 
 class Player : public ShootableCharacter {
-	static int lives;
+
 public:
-	Player(float xPos, float yPos, float V_x, float V_y, const String& filename)
-		: ShootableCharacter(xPos, yPos, V_x, V_y) {
+	Player(int health,float xPos, float yPos, float V_x, float V_y, const String& filename)
+		: ShootableCharacter(xPos, yPos, V_x, V_y,health) {
 		this->loadTexture(filename);
 		this->SetOrigin();
 		this->SetScale(player_Scale, player_Scale);
@@ -253,13 +269,12 @@ public:
 	void moveLeft() {
 		this->getSprite().move(-this->getVx(), 0);
 	}
-	static void takeDamage() {
-		lives--;
-		if (lives <= 0) {
-			cout << "Player died\n";
-		}
+	void moveUp() {
+		this->getSprite().move(0, -this->getVy());
 	}
-
+	void moveDown() {
+		this->getSprite().move(0, this->getVy());
+	}
 	void shoot(FloatRect& Mybounds) {
 		Bullet* b = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, .30f, kBulletTexturePath);
 		b->SetScale(0.2f, 0.15f);
@@ -288,15 +303,13 @@ public:
 		}
 	}
 };
-int Player::lives = 5;
 
 class Enemy : public ShootableCharacter {
-	int  health;
+	
 	bool isDead;
 public:
 	Enemy(float x, float y, float Vy, float Vx, int health, const String& filename)
-		: ShootableCharacter(x, y, Vx, Vy) {
-		this->health = health;
+		: ShootableCharacter(x, y, Vx, Vy,health) {
 		isDead = 0;
 		this->loadTexture(filename);
 	}
@@ -310,7 +323,11 @@ public:
 		return isDead;
 	}
 	void setStatus() {
-		isDead = 1;
+		if(health == 0)
+		   isDead = 1;
+	}
+	bool getStatus() {
+		return isDead;
 	}
 
 	virtual ~Enemy() {}
@@ -430,55 +447,154 @@ public:
 	}
 };
 
-void collisionsManager(Player& Me, Enemy**& drone) {
-	for (int k = 0; k < 1; k++) {
-		FloatRect P = Me.getSprite().getGlobalBounds();
-		FloatRect E = drone[k]->getSprite().getGlobalBounds();
-		Bullet** MyBullets_Boundary = Me.getPlayerBullets();
-		Bullet** EnemyBullets_Boundary = drone[k]->getBullets();
+class Cruiser:public Enemy {
+	Bullet** Laser;
+	Clock laserClock;
+	bool warning ;
+public:
+	Cruiser(float x, float y, float Vy, float Vx, int health, const String& filename) : Enemy(x, y, Vy, Vx, health, filename) {
+		this->SetOrigin();
+		this->setPosition();
+		this->SetScale(cruiser_Scale, -cruiser_Scale);
+		Laser = nullptr;
+		warning = 0;
+	}
+	void move() override {
+		if (this->getSprite().getGlobalBounds().left <= 0) {
+			setVx(fabs(getVx()));
+		}
+		else if (this->getSprite().getGlobalBounds().left + this->getSprite().getGlobalBounds().width >= windowSize.x) {
+			setVx(-getVx());
+		}
+		this->getSprite().move(getVx(), 0);
+	}
 
-		for (int i = 0; i < drone[k]->getBulletCount(); i++) { // check collision of enemy bullets with player
-			if (EnemyBullets_Boundary[i]->getSprite().getGlobalBounds().intersects(P)) {
-				drone[k]->deleteBullet(i);
-				Player::takeDamage();
+	void shoot(FloatRect Bounds) override {
+		if (clock.getElapsedTime().asSeconds() >= 1.5f) {
+			Bullet* bleft = new Bullet(3, false, Bounds.left, Bounds.top + Bounds.height, 0.5f, Bullet_speed, kCruiserLaserTexturePath);//left side bullet
+			Bullet* bright = new Bullet(3, false, Bounds.left + Bounds.width, Bounds.top + Bounds.height, 0.5f, Bullet_speed, kCruiserLaserTexturePath);//right side bullet
+			bleft->SetScale(0.2f, -0.15f);
+			bleft->SetOrigin();
+			bleft->setPosition();
+			bright->SetScale(0.2f, -0.15f);
+			bright->SetOrigin();
+			bright->setPosition();
+			addBullet(bright);
+			addBullet(bleft);
+			clock.restart();
+		}
+	}
+
+	void laserWarning() {
+	}
+	void laserAttack() {
+		this->laserWarning();
+	}
+	void update() override {
+		for (int i = 0; i < bulletCount; i++) {
+			bullets[i]->moveDown();
+		}
+		for (int i = 0; i < bulletCount; i++) {
+			if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y) {
+				this->deleteBullet(i);
 			}
 		}
-		for (int i = 0; i < Me.getBulletCount(); i++) { //check Collision of Player bullets with enemy
-			if (MyBullets_Boundary[i]->getSprite().getGlobalBounds().intersects(E) && !(drone[k]->checkStatus())) {
-				Me.deleteBullet(i);
-				drone[k]->destroy();
-				drone[k]->setStatus();
-				for (int r = 0; r < drone[k]->getBulletCount(); r++) {
-					drone[k]->deleteBullet(r);
+		if (laserClock.getElapsedTime().asSeconds() >= 10) {
+			this->laserAttack();
+		}
+	}
+	void draw(RenderWindow& window) override {
+		Entity::draw(window);
+		drawBullets(window);
+	}
+
+};
+
+void collisionsManager(Player& Me, Enemy**& enemies, int enemyCount) {
+
+	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
+
+	for (int k = 0; k < enemyCount; k++) {
+
+		if (!enemies[k]) continue;
+
+		FloatRect enemyBounds = enemies[k]->getSprite().getGlobalBounds();
+
+	
+		for (int i = enemies[k]->getBulletCount() - 1; i >= 0; i--) {
+			FloatRect bulletBounds = enemies[k]->getBullets()[i]->getSprite().getGlobalBounds();
+			if (bulletBounds.intersects(playerBounds)) {
+				enemies[k]->deleteBullet(i);        
+				enemies[k]->getBullets();            
+				Me.takeDamage();
+				cout << "Player hit\n";
+				playerBounds = Me.getSprite().getGlobalBounds(); 
+			}
+		}
+
+		// Player vs Bullet
+		for (int i = Me.getBulletCount() - 1; i >= 0; i--) {
+			FloatRect bulletBounds = Me.getPlayerBullets()[i]->getSprite().getGlobalBounds();
+			if (bulletBounds.intersects(enemyBounds)) {
+				Me.deleteBullet(i);                 
+				enemies[k]->takeDamage();
+				enemies[k]->setStatus();
+				if (enemies[k]->getStatus()) {
+					for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--) {
+						enemies[k]->deleteBullet(r);
+					}
+					break;
 				}
+				
 			}
 		}
-		if (E.intersects(P)) {//check collision of player and enemies
+
+		//Enemy body vs player body
+		if (!enemies[k]->checkStatus() && enemyBounds.intersects(playerBounds)) {
+		
+			enemies[k]->destroy();
+			enemies[k]->setStatus();
+
+			for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--) {
+				enemies[k]->deleteBullet(r);
+			}
+
+			Me.destroy();
+			//instantKill();               
 			cout << "Player Died\n";
 		}
-		if (drone[k]->checkStatus()) {
-			// Implement explosion animation here
-		}
-		else {
-			drone[k]->move();
-			if (drone[k]->getSprite().getGlobalBounds().top + drone[k]->getSprite().getGlobalBounds().height >= windowSize.y) {
-				cout << "Drone deleted\n";
+
+		
+		if (!enemies[k]->checkStatus()) {
+			float enemyBottom = enemies[k]->getSprite().getGlobalBounds().top
+				+ enemies[k]->getSprite().getGlobalBounds().height;
+			if (enemyBottom >= windowSize.y) {
+				enemies[k]->destroy();
+				enemies[k]->setStatus();
+				cout << "Enemy reached bottom\n";
 			}
-			drone[k]->shoot(drone[k]->getSprite().getGlobalBounds());
-			drone[k]->update();
+		}
+
+		if (!enemies[k]->checkStatus()) {
+			enemies[k]->move();
+			enemies[k]->shoot(enemies[k]->getSprite().getGlobalBounds());
+			enemies[k]->update();
 		}
 	}
 }
 
 int main()
 {
-	RenderWindow window(VideoMode::getDesktopMode(), "SFML Works!", Style::Fullscreen);
+	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
 	windowSize = window.getSize();
-	Player Me(windowSize.x/2, windowSize.y / 1.1f, .5f, .5f, kPlayerTexturePath);
+	Player Me(5, windowSize.x / 2, windowSize.y/2 , .4f, .4f, kPlayerTexturePath);
 	Enemy** enemy = new Enemy * [1];
-	enemy[0] = new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
+
+	//enemy[0] = new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
 	//enemy[0] = new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath }; // Viper
 	//enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1, kDroneTexturePath }; // Drone
+
+	enemy[0] = new Cruiser{ 100, 50, 0, cruiserSpeed, 10, kCruiserTexturePath };
 
 	while (window.isOpen()) {
 		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
@@ -502,9 +618,15 @@ int main()
 		if (Keyboard::isKeyPressed(Keyboard::A) && Mybounds.left > 0) {
 			Me.moveLeft();
 		}
+		if (Keyboard::isKeyPressed(Keyboard::W) && Mybounds.top > 0) {
+			Me.moveUp();
+		}
+		if (Keyboard::isKeyPressed(Keyboard::S) && Mybounds.top < windowSize.y) {
+			Me.moveDown();
+		}
 
 		Me.update();
-		collisionsManager(Me, enemy);
+		collisionsManager(Me, enemy,1);
 		window.clear();
 		Me.draw(window);
 		for (int i = 0; i < 1; i++)
