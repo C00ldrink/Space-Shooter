@@ -448,16 +448,18 @@ public:
 };
 
 class Cruiser:public Enemy {
-	Bullet** Laser;
 	Clock laserClock;
-	bool warning ;
+	int laserState ;
+	int gap;
+	RectangleShape *Laser;
 public:
 	Cruiser(float x, float y, float Vy, float Vx, int health, const String& filename) : Enemy(x, y, Vy, Vx, health, filename) {
 		this->SetOrigin();
 		this->setPosition();
 		this->SetScale(cruiser_Scale, -cruiser_Scale);
+		laserState = 0;
+		gap = 0;
 		Laser = nullptr;
-		warning = 0;
 	}
 	void move() override {
 		if (this->getSprite().getGlobalBounds().left <= 0) {
@@ -483,12 +485,43 @@ public:
 			addBullet(bleft);
 			clock.restart();
 		}
-	}
-
-	void laserWarning() {
-	}
-	void laserAttack() {
-		this->laserWarning();
+		if (laserState == 0) {
+		
+			if (laserClock.getElapsedTime().asSeconds() >= 10.f) {
+				gap = rand() % 5;
+				Laser = new RectangleShape[4];
+				
+				for (int i = 0,k=0; i < 5; i++) {
+					if (i != gap) {
+						Laser[k].setFillColor(Color::Color(255,0,0,30));
+						Laser[k].setSize(Vector2f(30, windowSize.y));
+						Laser[k].setPosition(i * 112, Bounds.top + Bounds.height);
+						k++;
+					}
+				}
+				laserState = 1;        
+				laserClock.restart();   
+			}
+		}
+		else if (laserState == 1) {
+			
+			if (laserClock.getElapsedTime().asSeconds() >= 1.5f) {
+				
+				for (int i = 0; i < 5; i++) {
+					if (i != gap) {
+						Bullet* laser = new Bullet(3, false, 112.f * i, Bounds.top + Bounds.height,0.5f, 2*Bullet_speed, kCruiserLaserTexturePath);
+						laser->SetScale(0.3f, -0.3f);
+						laser->SetOrigin();
+						laser->setPosition();
+						addBullet(laser);
+					}
+				}
+				laserState = 0;         
+				laserClock.restart();   
+				delete[] Laser;
+				Laser = nullptr;
+			}
+		}
 	}
 	void update() override {
 		for (int i = 0; i < bulletCount; i++) {
@@ -499,13 +532,19 @@ public:
 				this->deleteBullet(i);
 			}
 		}
-		if (laserClock.getElapsedTime().asSeconds() >= 10) {
-			this->laserAttack();
-		}
+		
 	}
 	void draw(RenderWindow& window) override {
 		Entity::draw(window);
 		drawBullets(window);
+		if (laserState == 1 && laserClock.getElapsedTime().asSeconds() <= 1.5) {
+			for (int i = 0,k=0; i < 5; i++) {
+				if (i != gap) {
+					window.draw(Laser[k]);
+					k++;
+				}
+			}
+		}
 	}
 
 };
