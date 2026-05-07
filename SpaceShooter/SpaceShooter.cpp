@@ -15,10 +15,6 @@ const sf::String kAssetRoot = "./";
 #include <SFML/System.hpp>
 
 const sf::String kAssetRoot = "../SpaceShooter/";
-<<<<<<< HEAD
-
-	====== =
-	>>>>>> > 332d38f7f512fa49d3c583cc4d2ed08430606841
 #endif
 
 	using namespace std;
@@ -31,7 +27,7 @@ const float cruiserSpeed = 0.3f;
 const float Bullet_speed = .5f;
 const float viper_Vy = 0.08f;
 const float viper_Amp = 60.f;   // smaller sine wave amplitude
-const float seeker_Speed = 0.2f;
+const float seeker_Speed = 0.7f;
 const float viper_Freq = 0.1f;
 const float drone_Scale = 0.06f;
 const float viper_Scale = 0.03f;
@@ -39,6 +35,8 @@ const float cruiser_Scale = 0.12f;
 const float seeker_Scale = 0.12f;
 const float player_Scale = 0.12f;
 const float twinCannon_Scale = 0.2f;
+const float MotherShip_Scale = 0.6f;
+
 const double pi = 3.14159;
 
 
@@ -57,12 +55,14 @@ const String kCruiserLaserTexturePath = resolvePath("Images/Enemy/cruiserLaser.p
 const String kLeftTurretTexturePath = resolvePath("Images/Enemy/LTurret.png");
 const String kRightTurretTexturePath = resolvePath("Images/Enemy/RTurret.png");
 const String kTwinCannonTexturePath = resolvePath("Images/Enemy/TwinCannon.png");
+const String kMotherShipTexturePath = resolvePath("Images/Enemy/MotherShip.png");
 
 IntRect ExplosionFrames(0, 0, 182, 182);
 const int explosionFrames = 7;
 
 
 class Entity {
+protected:
 	float xPos;
 	float yPos;
 	float V_x;
@@ -156,6 +156,7 @@ public:
 };
 
 class Bullet :public Entity {
+protected:
 	int damage;
 	bool pierceFlag;
 public:
@@ -172,7 +173,9 @@ public:
 	void moveDown() {
 		this->getSprite().move(0, this->getVy());
 	}
-
+	bool getNormalcy() {
+		return pierceFlag;
+	}
 };
 
 class ShootableCharacter : public Entity {
@@ -305,6 +308,7 @@ public:
 };
 
 class Enemy : public ShootableCharacter {
+protected:
 	bool isDead;
 public:
 	Enemy(float x, float y, float Vy, float Vx, int health, const String& filename)
@@ -312,15 +316,11 @@ public:
 		isDead = 0;
 		this->loadTexture(filename);
 	}
-
 	virtual void shoot(FloatRect Bounds) = 0;
 	virtual void move() = 0;
 	virtual void update() = 0;
 	virtual void draw(RenderWindow& window) = 0;
 
-	bool checkStatus() {
-		return isDead;
-	}
 	void setStatus() {
 		if(health == 0)
 		   isDead = 1;
@@ -328,10 +328,9 @@ public:
 	bool getStatus() {
 		return isDead;
 	}
-
+	
 	virtual ~Enemy() {}
 };
-
 class Drone : public Enemy {
 public:
 	Drone(float x, float y, float Vy, float Vx, int health, const String& filename)
@@ -440,6 +439,8 @@ public:
 	inline void update() override{}
 	void draw(RenderWindow& window) override {
 		Entity::draw(window);
+	}
+	~Seeker() {
 	}
 };
 
@@ -690,13 +691,157 @@ public:
 	}
 };
 
-void collisionsManager(Player& Me, Enemy**& enemies, int enemyCount) {
+class MotherShip:public Enemy {
+	double theta;
+	Clock laserClock;
+	Clock minionClock;
+	Seeker** Minions;
+	int seekerCount;
+public:
+	MotherShip(float x, float y, float Vy, float Vx, int health, const String& filename):Enemy(x, y, Vy, Vx, health, filename) {
+		this->SetOrigin();
+		this->setPosition();
+		this->SetScale(MotherShip_Scale, -MotherShip_Scale);
+		Minions = nullptr;
+		seekerCount = 0;
+	}
+	void move() override {
+		
+	}
+	inline void Homing(FloatRect PlayerBounds) {
+		theta = atan2((double)(PlayerBounds.top - getyPos()), (double)(PlayerBounds.left - getxPos()));
+		
+	}
+	void spawnSeekers(FloatRect PlayerBounds) {
+		if (minionClock.getElapsedTime().asSeconds() >= 2.5f) {
+			Seeker** temp = new Seeker * [seekerCount + 1];
+			for (int i = 0; i < seekerCount; i++) {
+				temp[i] = Minions[i];
+			}
+			temp[seekerCount] = new Seeker(PlayerBounds.left, PlayerBounds.top, rand() % windowSize.x, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
+			delete[] Minions;
+			Minions = temp;
+			seekerCount++;
+			minionClock.restart();
+		}
+	}
+	void shoot(FloatRect Bounds) override {
+
+		if (clock.getElapsedTime().asSeconds() >= 1.5f) {
+			Bullet* bleft = new Bullet(3, false, Bounds.left, Bounds.top + Bounds.height, 0.5f, Bullet_speed, kCruiserLaserTexturePath);//left side bullet
+			Bullet* bright = new Bullet(3, false, Bounds.left + Bounds.width, Bounds.top + Bounds.height, 0.5f, Bullet_speed, kCruiserLaserTexturePath);//right side bullet
+			bleft->SetScale(0.2f, -0.15f);
+			bleft->SetOrigin();
+			bleft->setPosition();
+			bright->SetScale(0.2f, -0.15f);
+			bright->SetOrigin();
+			bright->setPosition();
+			addBullet(bright);
+			addBullet(bleft);
+			clock.restart();
+		}
+        if (laserClock.getElapsedTime().asSeconds() >= 10.f) {
+	
+			for (int i = 0; i < 5; i++) {
+					Bullet* laser = new Bullet(3, true, windowSize.x * i / 5, Bounds.top + Bounds.height, 0.5f, 2 * Bullet_speed, kCruiserLaserTexturePath);
+					laser->SetScale(0.3f, -0.3f);
+					laser->SetOrigin();
+					laser->setPosition();
+					addBullet(laser);
+			}
+			laserClock.restart();
+		}
+		
+	}
+
+	void update() override {
+		float dx = cos(theta) * Bullet_speed;
+		float dy = sin(theta) * Bullet_speed;
+		for (int i = 0; i < bulletCount; i++) {
+			if (!bullets[i]->getNormalcy()) {
+				bullets[i]->getSprite().move(dx, dy);
+				bullets[i]->getSprite().setRotation(theta * ((double)180 / pi) - 90);
+			}
+			else {
+				bullets[i]->getSprite().move(0, Bullet_speed);
+			}
+		}
+		for (int i = bulletCount - 1; i >= 0; i--) {
+			if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y)
+				this->deleteBullet(i);
+		}
+	}
+
+	void draw(RenderWindow& window) override {
+		for (int i = 0; i < seekerCount; i++) {
+			Minions[i]->draw(window);
+		}
+		Entity::draw(window);
+		drawBullets(window);
+	}
+	Seeker** getSeeker() {
+		return Minions;
+	}
+	int& getSeekerCount() {
+		return seekerCount;
+	}
+	void destroySeekers(int i) {
+		delete Minions[i];
+		Seeker** temp = nullptr;
+		if (seekerCount > 1) {
+			temp = new Seeker * [seekerCount - 1];
+			for (int j = 0, k = 0; j < seekerCount; j++) {
+				if (i == j)
+					continue;
+				temp[k++] = Minions[j];
+			}
+		}
+		delete[] Minions;
+		Minions = temp;
+		seekerCount--;
+		cout << "Enemy deleted\n";
+	}
+	~MotherShip() {
+
+		for (int i = 0; i < seekerCount; i++) {
+			delete Minions[i];
+		}
+		delete[] Minions;
+	    for (int r = this->getBulletCount() - 1; r >= 0; r--) {
+				this->deleteBullet(r);
+		}
+	}
+};
+
+template<typename T>
+void deleteEnemy(int i,T** &enemies,int &enemyCount) {
+	delete enemies[i];
+	T** temp = nullptr;
+	if (enemyCount > 1) {
+		temp = new T * [enemyCount - 1];
+		for (int j = 0, k = 0; j < enemyCount; j++) {
+			if (i == j)
+				continue;
+			temp[k++] = enemies[j];
+		}
+	}
+	delete[] enemies;
+	enemies = temp;
+   enemyCount--;
+	cout << "Enemy deleted\n";
+}
+void collisionsManager(Player& Me, Enemy**& enemies,int &enemyCount) {
 
 	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
 
 	for (int k = 0; k < enemyCount; k++) {
 
 		if (!enemies[k]) continue;
+		if (enemies[k]->getStatus()) {
+			deleteEnemy(k, enemies,enemyCount);
+			k--;
+			continue;
+		}
 
 		// -------------------------------------------------------
 		// PHASE 1: Enemy bullets vs Player
@@ -743,7 +888,6 @@ void collisionsManager(Player& Me, Enemy**& enemies, int enemyCount) {
 				}
 			}
 		}
-
 		// -------------------------------------------------------
 		// PHASE 2: Player bullets vs Enemy
 		// -------------------------------------------------------
@@ -780,6 +924,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int enemyCount) {
 								cout << "Turret destroyed\n";
 							}
 							break;
+							cout << "Status checked\n";
 						}
 					}
 				}
@@ -806,51 +951,87 @@ void collisionsManager(Player& Me, Enemy**& enemies, int enemyCount) {
 					bulletDeleted = true;
 					enemies[k]->takeDamage();
 					enemies[k]->setStatus();
-					if (enemies[k]->getStatus()) {
+					/*if (enemies[k]->getStatus()) {
 						for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--)
 							enemies[k]->deleteBullet(r);
 						cout << "Enemy destroyed\n";
-					}
+					}*/
 				}
 			}
+			
 		}
 
 		// -------------------------------------------------------
 		// PHASE 3: Enemy body vs Player (ram kill)
 		// -------------------------------------------------------
-		FloatRect enemyBounds = enemies[k]->getSprite().getGlobalBounds(); // safe — declared here
-		if (!enemies[k]->checkStatus() && enemyBounds.intersects(playerBounds)) {
-			enemies[k]->destroy();
-			enemies[k]->setStatus();
-			for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--)
-				enemies[k]->deleteBullet(r);
-			Me.destroy();
-			cout << "Player Died\n";
-		}
-
-		// -------------------------------------------------------
-		// PHASE 4: Enemy reached bottom
-		// -------------------------------------------------------
-		if (!enemies[k]->checkStatus()) {
-			float enemyBottom = enemies[k]->getSprite().getGlobalBounds().top
-				+ enemies[k]->getSprite().getGlobalBounds().height;
-			if (enemyBottom >= windowSize.y) {
-				enemies[k]->destroy();
-				enemies[k]->setStatus();
-				cout << "Enemy reached bottom\n";
+	
+		if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
+			Seeker** spawnedSeeker = M->getSeeker();
+			for (int i = 0; i < M->getSeekerCount(); i++) {
+				FloatRect enemyBounds = spawnedSeeker[i]->getSprite().getGlobalBounds(); // safe — declared here
+				if (enemyBounds.intersects(playerBounds)) {
+					spawnedSeeker[i]->destroy();
+					spawnedSeeker[i]->setStatus();
+					Me.destroy();
+					cout << "Player Died\n";
+				}
 			}
 		}
-
+		else {
+			FloatRect enemyBounds = enemies[k]->getSprite().getGlobalBounds(); // safe — declared here
+			if (enemyBounds.intersects(playerBounds)) {
+				enemies[k]->destroy();
+				enemies[k]->setStatus();
+				for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--)
+					enemies[k]->deleteBullet(r);
+				Me.destroy();
+				cout << "Player Died\n";
+			}
+		}
 		// -------------------------------------------------------
 		// PHASE 5: Update alive enemies
 		// -------------------------------------------------------
-		if (!enemies[k]->checkStatus()) {
+		
 			if (TwinCannon* c = dynamic_cast<TwinCannon*>(enemies[k])) {
 				c->Homing(playerBounds);
 			}
-			enemies[k]->move();
-			enemies[k]->shoot(enemies[k]->getSprite().getGlobalBounds());
-			enemies[k]->update();
+			else if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
+				M->Homing(playerBounds);
+				M->spawnSeekers(playerBounds);
+			}
+			
+
+		if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
+			Seeker** spawnedSeeker = M->getSeeker();
+			for (int i = 0; i < M->getSeekerCount(); i++) {
+				spawnedSeeker[i]->move();
+				spawnedSeeker[i]->update();
+			}
+		}
+		enemies[k]->move();
+		enemies[k]->shoot(enemies[k]->getSprite().getGlobalBounds());
+		enemies[k]->update();
+		
+		// -------------------------------------------------------
+		// PHASE 4: Enemy reached bottom
+		// -------------------------------------------------------
+		if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
+			Seeker** spawnedSeeker = M->getSeeker();
+			for (int i = 0; i < M->getSeekerCount(); i++) {
+				float enemyBottom = spawnedSeeker[i]->getSprite().getGlobalBounds().top + spawnedSeeker[i]->getSprite().getGlobalBounds().height;
+				if (enemyBottom >= windowSize.y) {
+					M->destroySeekers(i);
+				}
+			}
+		}
+		else {
+			float enemyBottom = enemies[k]->getSprite().getGlobalBounds().top + enemies[k]->getSprite().getGlobalBounds().height;
+			if (enemyBottom >= windowSize.y) {
+				enemies[k]->destroy();
+				deleteEnemy<Enemy>(k, enemies, enemyCount);
+				k--;
+				continue;
+			}
 		}
 	}
 }
@@ -861,17 +1042,18 @@ int main()
 	windowSize = window.getSize();
 	Player Me(5, windowSize.x / 2, windowSize.y/2 , .4f, .4f, kPlayerTexturePath);
 	Enemy** enemy = new Enemy * [1];
+	int enemyCount = 1;
 
 	//enemy[0] = new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
 	//enemy[0] = new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath }; // Viper
 	//enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1, kDroneTexturePath }; // Drone
 
 	//enemy[0] = new Cruiser{ 100, 50, 0, cruiserSpeed, 20, kCruiserTexturePath };
-	enemy[0] = new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath);
+	//enemy[0] = new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath);
+	enemy[0] = new MotherShip(300, 100, 0, 0, 20, kMotherShipTexturePath);
 	while (window.isOpen()) {
 		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
 		Event event;
-
 		while (window.pollEvent(event)) {
 			if (event.type == Event::Closed) {
 				window.close();
@@ -898,16 +1080,13 @@ int main()
 		}
 
 		Me.update();
-		collisionsManager(Me, enemy,1);
+		collisionsManager(Me, enemy,enemyCount);
 		window.clear();
 		Me.draw(window);
-		for (int i = 0; i < 1; i++)
+		for (int i = 0; i < enemyCount; i++)
 			enemy[i]->draw(window);
 		window.display();
 	}
-
-	delete enemy[0];
-	delete[] enemy;
 
 	return 0;
 }
