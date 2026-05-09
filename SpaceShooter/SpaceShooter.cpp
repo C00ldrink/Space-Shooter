@@ -18,12 +18,11 @@ const sf::String kAssetRoot = "./";
 const sf::String kAssetRoot = "../SpaceShooter/";
 #endif
 
-using namespace std;
+	using namespace std;
 using namespace sf;
 
 Vector2u windowSize;
 
-const float FPS = 300.0f;
 const float Drone_Vy = 0.08f;
 const float cruiserSpeed = 0.3f;
 const float Bullet_speed = .5f;
@@ -492,7 +491,7 @@ public:
 				
 				for (int i = 0,k=0; i < 5; i++) {
 					if (i != gap) {
-						Laser[k].setFillColor(Color(255,0,0,30));
+						Laser[k].setFillColor(Color::Color(255,0,0,30));
 						Laser[k].setSize(Vector2f(112, windowSize.y));
 						Laser[k].setPosition(i * 112, Bounds.top + Bounds.height);
 						k++;
@@ -876,62 +875,35 @@ public:
 	}
 };
 
-class EnemyArray {
-	Enemy** data;
-	int capacity;
-	int count;
-public:
-	EnemyArray(int initialCap = 8) : capacity(initialCap), count(0) {
-		data = new Enemy*[capacity];
-	}
 
-	~EnemyArray() {
-		for (int i = 0; i < count; ++i) delete data[i];
-		delete[] data;
-	}
 
-	void add(Enemy* e) {
-		if (count >= capacity) {
-			int newCap = capacity * 2;
-			Enemy** tmp = new Enemy*[newCap];
-			for (int i = 0; i < count; ++i) 
-				tmp[i] = data[i];
-			delete[] data;
-			data = tmp;
-			capacity = newCap;
+template<typename T>
+void deleteEnemy(int i,T** &enemies,int &enemyCount) {
+	delete enemies[i];
+	T** temp = nullptr;
+	if (enemyCount > 1) {
+		temp = new T * [enemyCount - 1];
+		for (int j = 0, k = 0; j < enemyCount; j++) {
+			if (i == j)
+				continue;
+			temp[k++] = enemies[j];
 		}
-		data[count++] = e;
 	}
-
-	Enemy* operator[](int i) { 
-		return data[i]; 
-	}
-
-	int getCount() const { 
-		return count;
-	}
-
-	void removeAt(int i) {
-		if (i < 0 || i >= count) 
-			return;
-		delete data[i];
-		if (i != count - 1) 
-			data[i] = data[count - 1];
-		count--;
-		cout << "Enemy deleted\n";
-	}
-};
-
-void collisionsManager(Player& Me, EnemyArray& enemies, int &dropCount) {
+	delete[] enemies;
+	enemies = temp;
+   enemyCount--;
+	cout << "Enemy deleted\n";
+}
+void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropCount ) {
 
 	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
 
-	for (int k = 0; k < enemies.getCount(); k++) {
+	for (int k = 0; k < enemyCount; k++) {
 
 		if (!enemies[k]) continue;
 
 		if (enemies[k]->getStatus()) {
-			enemies.removeAt(k);
+			deleteEnemy(k, enemies, enemyCount);
 			k--;
 			continue;
 		}
@@ -1112,8 +1084,9 @@ void collisionsManager(Player& Me, EnemyArray& enemies, int &dropCount) {
 		// -------------------------------------------------------
 
 		if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
+			Seeker** seekers = M->getSeeker();
 			for (int i = 0; i < M->getSeekerCount(); i++) {
-				FloatRect b = M->getSeeker()[i]->getSprite().getGlobalBounds();
+				FloatRect b = seekers[i]->getSprite().getGlobalBounds();
 				if (b.top + b.height >= windowSize.y)
 					M->destroySeekers(i--);
 			}
@@ -1121,7 +1094,8 @@ void collisionsManager(Player& Me, EnemyArray& enemies, int &dropCount) {
 		else {
 			FloatRect b = enemies[k]->getSprite().getGlobalBounds();
 			if (b.top + b.height >= windowSize.y) {
-				enemies.removeAt(k);
+				enemies[k]->destroy();
+				deleteEnemy<Enemy>(k, enemies, enemyCount);
 				k--;
 				continue;
 			}
@@ -1133,18 +1107,18 @@ int main()
 {
 	
 	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
-	window.setFramerateLimit(FPS);
 	windowSize = window.getSize();
 	Player Me(5, windowSize.x / 2, windowSize.y/2 , .4f, .4f, kPlayerTexturePath);
-	EnemyArray enemy(4);
+	Enemy** enemy = new Enemy * [1];
 	Star stars[STAR_COUNT];   
+	int enemyCount = 1;
 	int dropCount = 0;
-	//enemy.add(new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath));
-	//enemy.add(new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath }); // Viper
-	//enemy.add(new Drone{ 100, 100, Drone_Vy, 0, 1, kDroneTexturePath }); // Drone
-	//enemy.add(new Cruiser{ 100, 50, 0, cruiserSpeed, 20, kCruiserTexturePath });
-	//enemy.add(new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath));
-	enemy.add(new MotherShip(300, 100, 0, 0, 20, kMotherShipTexturePath));
+	//enemy[0] = new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
+	//enemy[0] = new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath }; // Viper
+	//enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1, kDroneTexturePath }; // Drone
+	//enemy[0] = new Cruiser{ 100, 50, 0, cruiserSpeed, 20, kCruiserTexturePath };
+	//enemy[0] = new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath);
+	enemy[0] = new MotherShip(300, 100, 0, 0, 20, kMotherShipTexturePath);
 	while (window.isOpen()) {
 		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
 		Event event;
@@ -1175,14 +1149,14 @@ int main()
 		// Draw stars FIRST so everything renders on top
 		
 		Me.update();
-		collisionsManager(Me, enemy, dropCount);
+		collisionsManager(Me, enemy,enemyCount, dropCount);
 		window.clear();
 		for (int i = 0; i < STAR_COUNT; i++) {
 			stars[i].move();
 			stars[i].draw(window);
 		}
 		Me.draw(window);
-		for (int i = 0; i < enemy.getCount(); i++)
+		for (int i = 0; i < enemyCount; i++)
 			enemy[i]->draw(window);
 		
 		window.display();
