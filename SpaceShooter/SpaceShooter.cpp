@@ -1,6 +1,7 @@
 ﻿#include <iostream>
 #include <cmath>
 #include <random>
+#include <map>
 #ifdef _WIN32
 #include <SFML\Graphics.hpp>
 #include <SFML\Audio.hpp>
@@ -60,6 +61,8 @@ const String kMotherShipTexturePath = resolvePath("Images/Enemy/MotherShip.png")
 const String kheartDropTexturePath = resolvePath("Images/Drops/heartDrop.png");
 Texture heartTex, nukeTex, pierceTex, spreadTex;
 
+std::map<String, Texture> textureCache;
+
 IntRect ExplosionFrames(0, 0, 182, 182);
 const int explosionFrames = 7;
 class Entity {
@@ -68,7 +71,6 @@ protected:
 	float yPos;
 	float V_x;
 	float V_y;
-	Texture Tex;
 	Sprite sprite;
 public:
 	Entity() {
@@ -80,9 +82,7 @@ public:
 		this->yPos = other.yPos;
 		this->V_x = other.V_x;
 		this->V_y = other.V_y;
-		this->Tex = other.Tex;
 		this->sprite = other.sprite;
-		this->sprite.setTexture(this->Tex);
 	}
 	Entity& operator=(const Entity& other) {
 		if (this != &other) {
@@ -90,19 +90,19 @@ public:
 			this->yPos = other.yPos;
 			this->V_x = other.V_x;
 			this->V_y = other.V_y;
-			this->Tex = other.Tex;
 			this->sprite = other.sprite;
-			this->sprite.setTexture(this->Tex); // The most important line!
 		}
 		return *this;
 	}
 	bool loadTexture(const String& filename, IntRect frame = IntRect()) {
-		if (!Tex.loadFromFile(filename)) {
-			std::cout << "Failed to load: " << filename.toAnsiString() << std::endl;
-			return false;
+		if (textureCache.find(filename) == textureCache.end()) {
+			if (!textureCache[filename].loadFromFile(filename)) {
+				std::cout << "Failed to load: " << filename.toAnsiString() << std::endl;
+				return false;
+			}
 		}
 		bool resetRect = (frame == sf::IntRect());
-		sprite.setTexture(Tex, resetRect);
+		sprite.setTexture(textureCache[filename], resetRect);
 
 		if (!resetRect) {
 			sprite.setTextureRect(frame);
@@ -148,9 +148,6 @@ public:
 	Sprite& getSprite() {
 		return sprite;
 	}
-	Texture& getTexture() {
-		return Tex;
-	}
 	void draw(RenderWindow& window) {
 		window.draw(sprite);
 	}
@@ -185,14 +182,15 @@ protected:
 	Clock  clock;
 	Bullet** bullets;
 	int bulletCount;
+	int bulletCapacity;
 
 public:
 	ShootableCharacter()
-		: Entity(), bullets(nullptr), bulletCount(0) {
+		: Entity(), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
 		health = 0;
 	}
 
-	ShootableCharacter(float xPos, float yPos, float V_x, float V_y,int health): Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0) {
+	ShootableCharacter(float xPos, float yPos, float V_x, float V_y,int health): Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
 		this->health = health;
 	}
 
@@ -213,29 +211,24 @@ public:
 	}
 
 	void addBullet(Bullet* b) {
-		Bullet** temp = new Bullet * [bulletCount + 1];
-		for (int i = 0; i < bulletCount; i++) {
-			temp[i] = bullets[i];
+		if (bulletCount >= bulletCapacity) {
+			bulletCapacity = (bulletCapacity == 0) ? 10 : bulletCapacity * 2;
+			Bullet** temp = new Bullet * [bulletCapacity];
+			for (int i = 0; i < bulletCount; i++) {
+				temp[i] = bullets[i];
+			}
+			delete[] bullets;
+			bullets = temp;
 		}
-		temp[bulletCount] = b;
-		delete[] bullets;
-		bullets = temp;
+		bullets[bulletCount] = b;
 		bulletCount++;
 	}
 
 	void deleteBullet(int i) {
 		delete bullets[i];
-		Bullet** temp = nullptr;
-		if (bulletCount > 1) {
-			temp = new Bullet * [bulletCount - 1];
-			for (int j = 0, k = 0; j < bulletCount; j++) {
-				if (i == j)
-					continue;
-				temp[k++] = bullets[j];
-			}
+		for (int j = i; j < bulletCount - 1; j++) {
+			bullets[j] = bullets[j + 1];
 		}
-		delete[] bullets;
-		bullets = temp;
 		bulletCount--;
 	}
 
@@ -302,6 +295,7 @@ public:
 		for (int i = 0; i < bulletCount; i++) {
 			if (bullets[i]->getSprite().getGlobalBounds().top <= 0) {
 				this->deleteBullet(i);
+				i--;
 			}
 		}
 	}
@@ -362,6 +356,7 @@ public:
 		for (int i = 0; i < bulletCount; i++) {
 			if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y) {
 				this->deleteBullet(i);
+				i--;
 			}
 		}
 	}
@@ -407,6 +402,7 @@ public:
 		for (int i = 0; i < bulletCount; i++) {
 			if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y) {
 				this->deleteBullet(i);
+				i--;
 			}
 		}
 	}
@@ -491,7 +487,7 @@ public:
 				
 				for (int i = 0,k=0; i < 5; i++) {
 					if (i != gap) {
-						Laser[k].setFillColor(Color::Color(255,0,0,30));
+						Laser[k].setFillColor(Color(255,0,0,30));
 						Laser[k].setSize(Vector2f(112, windowSize.y));
 						Laser[k].setPosition(i * 112, Bounds.top + Bounds.height);
 						k++;
@@ -527,6 +523,7 @@ public:
 		for (int i = 0; i < bulletCount; i++) {
 			if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y) {
 				this->deleteBullet(i);
+				i--;
 			}
 		}
 		
@@ -582,6 +579,7 @@ public:
 		for (int i = 0; i < bulletCount; i++) {
 			if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y) {
 				this->deleteBullet(i);
+				i--;
 			}
 		}
 	}
@@ -663,6 +661,7 @@ public:
 				if (bullets[i]->getSprite().getGlobalBounds().top >= windowSize.y || bullets[i]->getSprite().getGlobalBounds().left < 0 ||
 					bullets[i]->getSprite().getGlobalBounds().left >= windowSize.x) {
 					this->deleteBullet(i);
+					i--;
 				}
 			}
 		}
@@ -697,6 +696,7 @@ class MotherShip:public Enemy {
 	Clock minionClock;
 	Seeker** Minions;
 	int seekerCount;
+	int seekerCapacity;
 public:
 	MotherShip(float x, float y, float Vy, float Vx, int health, const String& filename):Enemy(x, y, Vy, Vx, health, filename) {
 		this->SetOrigin();
@@ -704,6 +704,7 @@ public:
 		this->SetScale(MotherShip_Scale, -MotherShip_Scale);
 		Minions = nullptr;
 		seekerCount = 0;
+		seekerCapacity = 0;
 		theta = 0;
 	}
 	void move() override {
@@ -715,13 +716,16 @@ public:
 	}
 	void spawnSeekers(FloatRect PlayerBounds) {
 		if (minionClock.getElapsedTime().asSeconds() >= 2.5f) {
-			Seeker** temp = new Seeker * [seekerCount + 1];
-			for (int i = 0; i < seekerCount; i++) {
-				temp[i] = Minions[i];
+			if (seekerCount >= seekerCapacity) {
+				seekerCapacity = (seekerCapacity == 0) ? 10 : seekerCapacity * 2;
+				Seeker** temp = new Seeker * [seekerCapacity];
+				for (int i = 0; i < seekerCount; i++) {
+					temp[i] = Minions[i];
+				}
+				delete[] Minions;
+				Minions = temp;
 			}
-			temp[seekerCount] = new Seeker(PlayerBounds.left, PlayerBounds.top, rand() % windowSize.x, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
-			delete[] Minions;
-			Minions = temp;
+			Minions[seekerCount] = new Seeker(PlayerBounds.left, PlayerBounds.top, rand() % windowSize.x, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
 			seekerCount++;
 			minionClock.restart();
 		}
@@ -788,17 +792,9 @@ public:
 	}
 	void destroySeekers(int i) {
 		delete Minions[i];
-		Seeker** temp = nullptr;
-		if (seekerCount > 1) {
-			temp = new Seeker * [seekerCount - 1];
-			for (int j = 0, k = 0; j < seekerCount; j++) {
-				if (i == j)
-					continue;
-				temp[k++] = Minions[j];
-			}
+		for (int j = i; j < seekerCount - 1; j++) {
+			Minions[j] = Minions[j + 1];
 		}
-		delete[] Minions;
-		Minions = temp;
 		seekerCount--;
 		cout << "Enemy deleted\n";
 	}
@@ -880,18 +876,10 @@ public:
 template<typename T>
 void deleteEnemy(int i,T** &enemies,int &enemyCount) {
 	delete enemies[i];
-	T** temp = nullptr;
-	if (enemyCount > 1) {
-		temp = new T * [enemyCount - 1];
-		for (int j = 0, k = 0; j < enemyCount; j++) {
-			if (i == j)
-				continue;
-			temp[k++] = enemies[j];
-		}
+	for (int j = i; j < enemyCount - 1; j++) {
+		enemies[j] = enemies[j + 1];
 	}
-	delete[] enemies;
-	enemies = temp;
-   enemyCount--;
+	enemyCount--;
 	cout << "Enemy deleted\n";
 }
 void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropCount ) {
@@ -1105,7 +1093,19 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 
 int main()
 {
-	
+	textureCache[kPlayerTexturePath].loadFromFile(kPlayerTexturePath);
+	textureCache[kBulletTexturePath].loadFromFile(kBulletTexturePath);
+	textureCache[kDroneTexturePath].loadFromFile(kDroneTexturePath);
+	textureCache[kViperTexturePath].loadFromFile(kViperTexturePath);
+	textureCache[kSeekerTexturePath].loadFromFile(kSeekerTexturePath);
+	textureCache[ExpolsionTexturePath].loadFromFile(ExpolsionTexturePath);
+	textureCache[kCruiserTexturePath].loadFromFile(kCruiserTexturePath);
+	textureCache[kCruiserLaserTexturePath].loadFromFile(kCruiserLaserTexturePath);
+	textureCache[kLeftTurretTexturePath].loadFromFile(kLeftTurretTexturePath);
+	textureCache[kRightTurretTexturePath].loadFromFile(kRightTurretTexturePath);
+	textureCache[kTwinCannonTexturePath].loadFromFile(kTwinCannonTexturePath);
+	textureCache[kMotherShipTexturePath].loadFromFile(kMotherShipTexturePath);
+
 	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
 	windowSize = window.getSize();
 	Player Me(5, windowSize.x / 2, windowSize.y/2 , .4f, .4f, kPlayerTexturePath);
