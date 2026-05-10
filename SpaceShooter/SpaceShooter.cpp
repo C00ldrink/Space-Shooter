@@ -68,6 +68,7 @@ const String kRightTurretTexturePath = resolvePath("Images/Enemy/RTurret.png");
 const String kTwinCannonTexturePath = resolvePath("Images/Enemy/TwinCannon.png");
 const String kMotherShipTexturePath = resolvePath("Images/Enemy/MotherShip.png");
 const String kheartDropTexturePath = resolvePath("Images/Drops/heartDrop.png");
+const String FontPath = resolvePath("assets/fonts/Savery.ttf");
 Texture heartTex, nukeTex, pierceTex, spreadTex;
 
 std::map<String, Texture> textureCache;
@@ -884,8 +885,6 @@ public:
 	}
 };
 
-
-
 template<typename T>
 void deleteEnemy(int i,T** &enemies,int &enemyCount) {
 	delete enemies[i];
@@ -1205,7 +1204,7 @@ public:
 	float glowTimer = 0.f;
 	Screen(sf::RenderWindow& window, const char* Header,const char* Option1, const char* Option2, const char* Option3)
 	{
-		font.loadFromFile("C:/Users/Administrator/source/repos/SpaceShooter/SpaceShooter/assets/fonts/Savery.ttf");
+		font.loadFromFile(FontPath);
 
 		const char* labelStr[OPTION_COUNT] = {
 			Option1,
