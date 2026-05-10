@@ -1,7 +1,8 @@
-﻿#include <iostream>
+#include <iostream>
 #include <cmath>
 #include <random>
 #include <map>
+#include <fstream>
 #ifdef _WIN32
 #include <SFML\Graphics.hpp>
 #include <SFML\Audio.hpp>
@@ -57,6 +58,12 @@ const int SEEKERS_START = 4;   // wave at which seekers begin spawning
 const int VIPERS_START = 7;
 int wave = 0;
 
+const int SCORE_DRONE = 10;
+const int SCORE_VIPER = 15;
+const int SCORE_SEEKER = 20;
+const int SCORE_BOSS = 50;
+const String kHighScorePath = "highscores.txt";
+
 const double pi = 3.14159;
 const int STAR_COUNT = 150;
 
@@ -84,10 +91,26 @@ const String kEmpBulletPath = resolvePath("Images/Player/empBullet.png");
 const String kHeartTexturePath = resolvePath("Images/HUD/heart.png");
 const String kShieldTexturePath = resolvePath("Images/HUD/shield.png");
 const String kEmpTexturePath = resolvePath("Images/HUD/emp.png");
+const String kAsteroid1Path = resolvePath("Images/Asteroids/ast1.png");
+const String kAsteroid2Path = resolvePath("Images/Asteroids/ast2.png");
+const String kAsteroid3Path = resolvePath("Images/Asteroids/ast3.png");
+
+const float ASTEROID_SPEED = 0.08f;
+const int ASTEROID_MIN_COUNT = 3;
+const int ASTEROID_MAX_COUNT = 5;
+
 const String kPlayerShieldTexturePath = resolvePath("Images/Player/Shield.png");
 //replace this with your font path 
 const String FontPath = resolvePath("/assets/fonts/Orbitron Medium.ttf");
 std::map<String, Texture> textureCache;
+
+
+float RandomValue(float n) {
+	return static_cast<float>(rand()) / RAND_MAX * n;
+}
+float RandomValue(float min, float max) {
+	return min + static_cast<float>(rand()) / RAND_MAX * (max - min);
+}
 
 IntRect ExplosionFrames(0, 0, 182, 182);
 const int explosionFrames = 7;
@@ -210,6 +233,7 @@ class ShootableCharacter : public Entity {
 protected:
 	bool isDead;
 	int  health;
+	int  maxHealth;
 	Clock  clock;
 	bool isExploding;
 	Clock explosionClock;
@@ -221,12 +245,14 @@ public:
 	ShootableCharacter()
 		: Entity(), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
 		health = 0;
+		maxHealth = 0;
 		isExploding = 0;
 		currentFrame = 0;
 	}
 
 	ShootableCharacter(float xPos, float yPos, float V_x, float V_y, int health) : Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
 		this->health = health;
+		this->maxHealth = health;
 	}
 	bool isExpolode() {
 		return isExploding;
@@ -299,12 +325,18 @@ public:
 		explosionClock.restart();
 	}
 
+	int getHealth() const {
+		return health;
+	}
 	virtual void takeDamage() {
 		if (isExploding) return;
 		health--;
 		if (health <= 0) {
 			destroy();
 		}
+	}
+	int getMaxHealth() const {
+		return maxHealth;
 	}
 	void setStatus() {
 			isDead = 1;
@@ -330,8 +362,24 @@ public:
 	int pierceCount;
 	bool empShot;
 	float dt;
-	Player(int health, float xPos, float yPos, float V_x, float V_y, const String& filename)
-		: ShootableCharacter(xPos, yPos, V_x, V_y, health), currentWeapon(weaponStandard), shieldHits(0), empCount(1) { // this
+	Sprite EMP;
+	int score;
+	int scoreMultiplier;
+	Clock lastKillTime;
+
+// dash system
+	Clock dashCooldownClock;
+	Clock invincibleClock;
+	bool isInvincible;
+	float dashDistance;
+
+	// dash animation
+	Sprite* dashTrail;
+	int dashTrailCount;
+	Clock dashTrailClock;
+
+	Player(int health,float xPos, float yPos, float V_x, float V_y, const String& filename)
+		: ShootableCharacter(xPos, yPos, V_x, V_y,health), currentWeapon(weaponStandard), shieldHits(0), empCount(1), score(0), scoreMultiplier(1), isInvincible(false), dashDistance(150.f), dashTrailCount(0) {
 		this->loadTexture(filename);
 		this->SetOrigin();
 		this->SetScale(player_Scale, player_Scale);
@@ -340,6 +388,13 @@ public:
 		shield.setOrigin(shield.getLocalBounds().width / 2.f, shield.getLocalBounds().height / 2.f);
 		shield.setScale(0.05, 0.05);
 		isDead = 0;
+		lastKillTime.restart();
+		dashCooldownClock.restart();
+		invincibleClock.restart();
+		EMP.setTexture(textureCache[kEmpBulletPath]);
+		EMP.setOrigin(EMP.getLocalBounds().width / 2, EMP.getLocalBounds().height / 2);
+		EMP.setScale(0.05, 0.05);
+		dashTrail = new Sprite [3];
 		pierce = 0;
 		pierceCount = 0;
 		empShot = 0;
@@ -385,10 +440,12 @@ public:
 	}
 	//roblox damage sound puhleeeeeez?!? ok
 	void takeDamage() override {
+		if (isInvincible) return;
 		if (shieldHits > 0) {
 			shieldHits--;
 			return;
 		}
+		resetMultiplier();
 		ShootableCharacter::takeDamage();
 	}
 
@@ -404,8 +461,6 @@ public:
 
 	void empShoot(FloatRect& Mybounds) {
 		if (empCount > 0) {
-			Bullet* b = new Bullet(10, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0, 0, kEmpBulletPath);
-			b->SetScale(0.06f, 0.06f); b->SetOrigin(); b->setPosition(); addBullet(b);
 			empCount--; 
 			dt = 0.06f;     
 		}
@@ -433,9 +488,89 @@ public:
 	Bullet** getPlayerBullets() {
 		return getBullets();
 	}
+
+	int getScore() const { 
+		return score; 
+	}
+	int getScoreMultiplier() const { 
+		return scoreMultiplier; 
+	}
+
+	void addScore(int basePoints) {
+		float timeSinceLastKill = lastKillTime.getElapsedTime().asSeconds();
+		if (timeSinceLastKill <= 3.0f) {
+			if (scoreMultiplier == 1) scoreMultiplier = 2;
+			else if (scoreMultiplier == 2) scoreMultiplier = 4;
+		}
+		else {
+			scoreMultiplier = 1;
+		}
+		score += basePoints * scoreMultiplier;
+		lastKillTime.restart();
+	}
+
+	void resetMultiplier() {
+		scoreMultiplier = 1;
+	}
+
+	bool canDash() const {
+		return dashCooldownClock.getElapsedTime().asSeconds() >= 3.0f;
+	}
+
+	float getDashCooldown() const {
+		float elapsed = dashCooldownClock.getElapsedTime().asSeconds();
+		return (elapsed >= 3.0f) ? 0.0f : 3.0f - elapsed;
+	}
+
+	bool getIsInvincible() const {
+		return isInvincible;
+	}
+
+	void dash(float dx, float dy) {
+		if (canDash()) {
+			FloatRect bounds = getSprite().getGlobalBounds();
+			Vector2f startPos = getSprite().getPosition();
+
+			float endX = startPos.x + dx * dashDistance;
+			float endY = startPos.y + dy * dashDistance;
+
+			endX = max(bounds.width / 2.f, min(endX, windowSize.x - bounds.width / 2.f));
+			endY = max(bounds.height / 2.f, min(endY, windowSize.y - bounds.height / 2.f));
+
+			dashTrail[0] = getSprite();
+			dashTrail[1] = getSprite();
+			dashTrail[1].setPosition(startPos.x + (endX - startPos.x) * 0.2f, startPos.y + (endY - startPos.y) * 0.2f);
+			dashTrail[2] = getSprite();
+			dashTrail[2].setPosition(startPos.x + (endX - startPos.x) * 0.6f, startPos.y + (endY - startPos.y) * 0.6f);
+
+			dashTrailCount = 3;
+			dashTrailClock.restart();
+
+			getSprite().setPosition(endX, endY);
+			dashCooldownClock.restart();
+			invincibleClock.restart();
+			isInvincible = true;
+		}
+	}
+
+	void updateDash() {
+		if (dashTrailCount > 0 && dashTrailClock.getElapsedTime().asSeconds() >= 0.2f) {
+			dashTrailCount = 0;
+		}
+		if (isInvincible && invincibleClock.getElapsedTime().asSeconds() >= 0.5f) {
+			isInvincible = false;
+		}
+	}
+
 	void draw(RenderWindow& window) {
+		for (int i = 0; i < dashTrailCount; i++) {
+			window.draw(dashTrail[i]);
+		}
 		if (shieldHits > 0) {
 			window.draw(shield);
+		}
+		if (empShot) {
+			window.draw(EMP);
 		}
 		Entity::draw(window);
 		drawBullets(window);
@@ -443,21 +578,18 @@ public:
 	void update() {
 		updateExplosion();
 		shield.setPosition(sprite.getPosition().x, sprite.getPosition().y);
+		EMP.setPosition(sprite.getPosition().x, sprite.getPosition().y);
+
+		if (empShot) {
+			dt += 0.001f;
+			EMP.setScale(dt, dt);
+			if (dt > 1) {
+				empShot = false;
+				dt = 0.01f;
+			}
+		}
 		for (int i = 0; i < bulletCount; i++) {
-			bool isEmpBullet = (empShot && i == bulletCount - 1);
-			if (isEmpBullet) {
-				dt += 0.015f;
-				bullets[i]->getSprite().setScale(dt, dt);
-				if (dt > 1) {
-					empShot = false;
-					dt = 0.01f;
-					deleteBullet(i);
-					i--;
-				}
-			}
-			else {
-				bullets[i]->getSprite().move(bullets[i]->getVx(), -bullets[i]->getVy());
-			}
+			bullets[i]->getSprite().move(bullets[i]->getVx(), -bullets[i]->getVy());
 		}
 		for (int i = 0; i < bulletCount; i++) {
 			if (empShot) break; // don't delete EMP bullet during animation
@@ -466,6 +598,10 @@ public:
 				i--;
 			}
 		}
+	}
+
+	~Player() {
+		delete[] dashTrail;
 	}
 };
 
@@ -480,6 +616,9 @@ public:
 	virtual void move() = 0;
 	virtual void update() = 0;
 	virtual void draw(RenderWindow& window) = 0;
+	virtual int getScoreValue() const { 
+		return SCORE_DRONE;
+	}
 	virtual ~Enemy() {}
 	float getHealth() {
 		return health;
@@ -493,6 +632,9 @@ public:
 		this->SetOrigin();
 		this->setPosition();
 		this->SetScale(drone_Scale, drone_Scale);
+	}
+	int getScoreValue() const override { 
+		return SCORE_DRONE; 
 	}
 
 	void move() override {
@@ -541,6 +683,10 @@ public:
 		currentY = y;
 		time = 0;
 	}
+	int getScoreValue() const override { 
+		return SCORE_VIPER; 
+	}
+
 	void move() override {
 		time += 0.05f;
 		float x = getxPos() + viper_Amp * sin(time * viper_Freq);
@@ -591,6 +737,10 @@ public:
 		setVy(seeker_Speed * sin(theta));
 		this->getSprite().setRotation(theta*((double)180 / pi)-90);
 	}
+	int getScoreValue() const override {
+		return SCORE_SEEKER; 
+	}
+
 	inline void move() override {
 		this->getSprite().move(getVx(), getVy());
 	}
@@ -620,6 +770,10 @@ public:
 		gap = 0;
 		Laser = nullptr;
 	}
+	int getScoreValue() const override { 
+		return SCORE_BOSS; 
+	}
+
 	void move() override {
 		if (this->getSprite().getGlobalBounds().left <= 0) {
 			setVx(fabs(getVx()));
@@ -719,6 +873,10 @@ public:
 		this->SetScale(twinCannon_Scale, twinCannon_Scale);
 		theta = 0;
 	}
+	int getScoreValue() const override { 
+		return SCORE_BOSS; 
+	}
+
 	inline void move() override {
 	}
 	void Homing(FloatRect PlayerBounds) {
@@ -776,6 +934,10 @@ public:
 		this->SetOrigin();
 		theta = 0;
 	}
+	int getScoreValue() const override { 
+		return SCORE_BOSS; 
+	}
+
 	inline void move() override {}
 	bool allTurretsActive() {
 
@@ -874,6 +1036,10 @@ public:
 		seekerCapacity = 0;
 		theta = 0;
 	}
+	int getScoreValue() const override { 
+		return SCORE_BOSS; 
+	}
+
 	void move() override {
 		
 	}
@@ -998,17 +1164,50 @@ public:
 		SetOrigin();
 		setPosition();
 	}
-	int getType() const { 
-		return powerType; 
+	int getType() const {
+		return powerType;
 	}
-	void moveDown() { 
-		getSprite().move(0, getVy()); 
+	void moveDown() {
+		getSprite().move(0, getVy());
 	}
-	void draw(RenderWindow& window) { 
-		Entity::draw(window); 
+	void draw(RenderWindow& window) {
+		Entity::draw(window);
 	}
-	FloatRect getBounds() const { 
-		return getSprite().getGlobalBounds(); 
+	FloatRect getBounds() const {
+		return getSprite().getGlobalBounds();
+	}
+};
+
+class Asteroid : public Entity {
+public:
+	Asteroid(float x, float y, int sizeType) : Entity(x, y, 0, ASTEROID_SPEED) {
+		String path;
+		float scale;
+		float mul = 1.2f; //how many times bigger than player
+		if (sizeType == 0) {
+			path = kAsteroid1Path;
+			scale = 0.1f * mul;
+		} else if (sizeType == 1) {
+			path = kAsteroid2Path;
+			scale = 0.025f * mul;
+		} else {
+			path = kAsteroid3Path;
+			scale = 0.1f * mul;
+		}
+		loadTexture(path);
+		SetScale(scale, scale);
+		SetOrigin();
+		setPosition();
+	}
+	void moveDown() {
+		sprite.move(0, getVy());
+		sprite.rotate(.1f);
+	}
+	void draw(RenderWindow& window) {
+		Entity::draw(window);
+	}
+	FloatRect getBounds() const {
+		return getSprite().getGlobalBounds();
 	}
 };
 
@@ -1045,6 +1244,41 @@ void spawnPowerup(float x, float y, PowerUp**& powerups, int& powerupCount) {
 		powerups = temp;
 		powerupCount++;
 	} //need to make this more efficient, this recreation again and again is terrible.Dynamic arrays suck
+}
+
+void spawnAsteroids(Asteroid**& asteroids, int& asteroidCount) {
+	if (asteroidCount != 0) {
+		for (int i = 0; i < asteroidCount; i++) {
+			delete asteroids[i];
+		}
+		delete[] asteroids;
+	}
+
+	asteroidCount = 3;
+	asteroids = new Asteroid * [asteroidCount];
+
+	float segmentWidth = windowSize.x / 3.f;
+	for (int i = 0; i < asteroidCount; i++) {
+		float x = segmentWidth * (i + 0.5f);
+		float y = -100.f - (i * 400.f);
+		int sizeType = rand() % 3;
+		asteroids[i] = new Asteroid(x, y, sizeType);
+	}
+}
+
+void updateAsteroids(Asteroid**& asteroids, int& asteroidCount) {
+	for (int i = 0; i < asteroidCount; i++) {
+		asteroids[i]->moveDown();
+		FloatRect bounds = asteroids[i]->getBounds();
+		if (bounds.top > windowSize.y) {
+			delete asteroids[i];
+			float segmentWidth = windowSize.x / asteroidCount;
+			float x = segmentWidth * (i + 0.5f);
+			float y = RandomValue(-800.f, -100.f);
+			int sizeType = rand() % 3;
+			asteroids[i] = new Asteroid(x, y, sizeType);
+		}
+	}
 }
 
 class Star {
@@ -1107,7 +1341,7 @@ void deleteEnemy(int i,T** &enemies,int &enemyCount) {
 	enemyCount--;
 	cout << "Enemy deleted\n";
 }
-void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount) {
+void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount, Asteroid** asteroids, int asteroidCount) {
 
 	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
 
@@ -1118,6 +1352,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 		if (enemies[k]->getStatus()) {
 			Vector2f pos = enemies[k]->getSprite().getPosition(); //try spawning powerup
 			spawnPowerup(pos.x, pos.y, powerups, powerupCount);
+			Me.addScore(enemies[k]->getScoreValue());
 			deleteEnemy(k, enemies, enemyCount);
 			k--;
 			continue;
@@ -1186,6 +1421,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 							for (int r = turrets[t]->getBulletCount() - 1; r >= 0; r--)
 								turrets[t]->deleteBullet(r);
 
+							Me.addScore(turrets[t]->getScoreValue());
 							delete turrets[t];
 
 							for (int s = t; s < tc->getTurretCount() - 1; s++)
@@ -1193,7 +1429,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 							turrets[tc->getTurretCount() - 1] = nullptr;
 
 							tc->reduceTurret();
-							cout << "Turret destroyed\n";
+						 cout << "Turret destroyed\n";
 						}
 						break;
 					}
@@ -1316,6 +1552,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			if (b.top + b.height >= windowSize.y) {
 				Vector2f pos = enemies[k]->getSprite().getPosition();
 				spawnPowerup(pos.x, pos.y, powerups, powerupCount); //should it spawn now? ye
+				Me.addScore(enemies[k]->getScoreValue());
 				enemies[k]->destroy();
 				deleteEnemy<Enemy>(k, enemies, enemyCount);
 				k--;
@@ -1339,10 +1576,39 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 		}
 		else if (powerups[i]->getBounds().top >= windowSize.y) {
 			delete powerups[i];
-			for (int j = i; j < powerupCount - 1; j++) 
+			for (int j = i; j < powerupCount - 1; j++)
 				powerups[j] = powerups[j + 1];
 			powerupCount--;
 			i--;
+		}
+	}
+
+	for (int a = 0; a < asteroidCount; a++) {
+		FloatRect asteroidBounds = asteroids[a]->getBounds();
+
+		for (int i = Me.getBulletCount() - 1; i >= 0; i--) {
+			FloatRect bulletBounds = Me.getPlayerBullets()[i]->getSprite().getGlobalBounds();
+			if (bulletBounds.intersects(asteroidBounds)) {
+				if (!Me.getPierceFlag()) {
+					Me.deleteBullet(i);
+					break;
+				}
+			}
+		}
+
+		for (int k = 0; k < enemyCount; k++) {
+			if (!enemies[k]) continue;
+			for (int i = enemies[k]->getBulletCount() - 1; i >= 0; i--) {
+				FloatRect bulletBounds = enemies[k]->getBullets()[i]->getSprite().getGlobalBounds();
+				if (bulletBounds.intersects(asteroidBounds)) {
+					enemies[k]->deleteBullet(i);
+				}
+			}
+		}
+
+		if (playerBounds.intersects(asteroidBounds)) {
+			Me.takeDamage();
+			playerBounds = Me.getSprite().getGlobalBounds();
 		}
 	}
 }
@@ -1361,18 +1627,31 @@ enum class GameState {
 };
 void InputManager(Player& Me, FloatRect Mybounds, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount) {
 	static int keyFrame = 0;
+	float dx = 0, dy = 0;
 	if (Keyboard::isKeyPressed(Keyboard::D) && Mybounds.left + Mybounds.width < windowSize.x) {
 		Me.moveRight();
+		dx = 1;
 	}
 	if (Keyboard::isKeyPressed(Keyboard::A) && Mybounds.left > 0) {
 		Me.moveLeft();
+		dx = -1;
 	}
 	if (Keyboard::isKeyPressed(Keyboard::W) && Mybounds.top > 0) {
 		Me.moveUp();
+		dy = -1;
 	}
 	if (Keyboard::isKeyPressed(Keyboard::S) && Mybounds.top < windowSize.y) {
 		Me.moveDown();
+		dy = 1;
 	}
+
+	static bool eWasPressed = false;
+	bool eNowPressed = Keyboard::isKeyPressed(Keyboard::E);
+	if (eNowPressed && !eWasPressed && (dx != 0 || dy != 0)) {
+		Me.dash(dx, dy);
+	}
+	eWasPressed = eNowPressed;
+
 	if (Keyboard::isKeyPressed(Keyboard::Space) && keyFrame >= 150) {
 		keyFrame = 0;
 		Me.shoot(Mybounds);
@@ -1401,12 +1680,6 @@ void InputManager(Player& Me, FloatRect Mybounds, Enemy**& enemies, int& enemyCo
 	nWasPressed = nNowPressed;
 }
 
-float RandomValue(float n) {
-	return static_cast<float>(rand()) / RAND_MAX * n;
-}
-float RandomValue(float min, float max) {
-	return min + static_cast<float>(rand()) / RAND_MAX * (max - min);
-}
 void spawnWave(Enemy**& enemies, int& enemyCount,FloatRect Me,GameMode mode)
 {
 	if (mode == GameMode::Survival) {
@@ -1583,13 +1856,76 @@ public:
 	}
 };
 
-class GameObject {
+class MainMenuScreen : public Screen {
 public:
+	Text arcadeBest;
+	Text survivalBest;
 
+	MainMenuScreen(sf::RenderWindow& window, Font& font, int arcadeHigh, int survivalHigh)
+		: Screen(window, "Main Menu", "Arcade Mode", "Survival Mode", "Exit")
+	{
+	arcadeBest.setFont(font);
+	arcadeBest.setString("Best: " + std::to_string(arcadeHigh));
+	arcadeBest.setCharacterSize(11);
+	arcadeBest.setFillColor(sf::Color(150, 180, 255, 200));
+	arcadeBest.setOrigin(arcadeBest.getLocalBounds().width / 2.f, arcadeBest.getLocalBounds().height / 2.f);
+	arcadeBest.setPosition(window.getSize().x / 2.f, 341.f);
+
+	survivalBest.setFont(font);
+	survivalBest.setString("Best: " + std::to_string(survivalHigh));
+	survivalBest.setCharacterSize(11);
+	survivalBest.setFillColor(sf::Color(150, 180, 255, 200));
+	survivalBest.setOrigin(survivalBest.getLocalBounds().width / 2.f, survivalBest.getLocalBounds().height / 2.f);
+	survivalBest.setPosition(window.getSize().x / 2.f, 422.f);
+	}
+
+void updateHighScores(int arcadeHigh, int survivalHigh) {
+	arcadeBest.setString("Best: " + std::to_string(arcadeHigh));
+	arcadeBest.setOrigin(arcadeBest.getLocalBounds().width / 2.f, arcadeBest.getLocalBounds().height / 2.f);
+	survivalBest.setString("Best: " + std::to_string(survivalHigh));
+	survivalBest.setOrigin(survivalBest.getLocalBounds().width / 2.f, survivalBest.getLocalBounds().height / 2.f);
+}
+
+	void draw(sf::RenderWindow& window) {
+		Screen::draw(window);
+		window.draw(arcadeBest);
+		window.draw(survivalBest);
+	}
+};
+
+class GameObject {
+private:
+	void loadTextures() {
+		textureCache[kPlayerTexturePath].loadFromFile(kPlayerTexturePath);
+		textureCache[kBulletTexturePath].loadFromFile(kBulletTexturePath);
+		textureCache[kDroneTexturePath].loadFromFile(kDroneTexturePath);
+		textureCache[kViperTexturePath].loadFromFile(kViperTexturePath);
+		textureCache[kSeekerTexturePath].loadFromFile(kSeekerTexturePath);
+		textureCache[ExpolsionTexturePath].loadFromFile(ExpolsionTexturePath);
+		textureCache[kCruiserTexturePath].loadFromFile(kCruiserTexturePath);
+		textureCache[kCruiserLaserTexturePath].loadFromFile(kCruiserLaserTexturePath);
+		textureCache[kLeftTurretTexturePath].loadFromFile(kLeftTurretTexturePath);
+		textureCache[kRightTurretTexturePath].loadFromFile(kRightTurretTexturePath);
+		textureCache[kTwinCannonTexturePath].loadFromFile(kTwinCannonTexturePath);
+		textureCache[kMotherShipTexturePath].loadFromFile(kMotherShipTexturePath);
+		textureCache[kSpreadPlayerPath].loadFromFile(kSpreadPlayerPath);
+		textureCache[kPiercePlayerPath].loadFromFile(kPiercePlayerPath);
+		textureCache[kPierceBulletPath].loadFromFile(kPierceBulletPath);
+		textureCache[kEmpBulletPath].loadFromFile(kEmpBulletPath);
+		textureCache[kHeartTexturePath].loadFromFile(kHeartTexturePath);
+		textureCache[kShieldTexturePath].loadFromFile(kShieldTexturePath);
+		textureCache[kEmpTexturePath].loadFromFile(kEmpTexturePath);
+		textureCache[kAsteroid1Path].loadFromFile(kAsteroid1Path);
+		textureCache[kAsteroid2Path].loadFromFile(kAsteroid2Path);
+		textureCache[kAsteroid3Path].loadFromFile(kAsteroid3Path);
+		textureCache[kPlayerShieldTexturePath].loadFromFile(kPlayerShieldTexturePath);
+
+	}
+public:
 	GameState state;
 	GameMode mode;
 	Screen pauseScreen;
-	Screen mainScreen;
+	MainMenuScreen* mainMenuScreen;
 	Screen gameOver;
 	Screen gameWin;
 	Player* player;
@@ -1599,23 +1935,41 @@ public:
 	Clock clock;
 	PowerUp** powerups;
 	int powerupCount;
+	Asteroid** asteroids;
+	int asteroidCount;
 	FPS fps;
 	Text fpsNum;
+	Text scoreText;
+	Text multiplierText;
+	Text dashText;
 	Font font;
 	Text waveText;
 	RectangleShape healthBarBg;
 	RectangleShape healthBarFill;
 	Text healthBarLabel;
 
-	GameObject(GameState s,RenderWindow &window) : state(s),pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), mainScreen(window, "Main Menu", "Arcade Mode", "Survival Mode", "Exit"),gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit"),gameWin(window, "You Win!", "Play Again", "Back To Main Menu", "Exit") {
+	int survivalHighScore;
+	int arcadeHighScore;
+
+	GameObject(GameState s,RenderWindow &window) : 
+		state(s), pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), 
+		gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit"),
+		gameWin(window, "You Win!", "Play Again", "Back To Main Menu", "Exit"), 
+		survivalHighScore(0), arcadeHighScore(0) {
+
+		loadTextures();
+		loadHighScores();
 		player = nullptr;
 		enemies = nullptr;
 		enemyCount = 0;
 		powerups = nullptr;
 		powerupCount = 0;
+		asteroids = nullptr;
+		asteroidCount = 0;
 		font.loadFromFile(FontPath);
+		mainMenuScreen = new MainMenuScreen(window, font, survivalHighScore, arcadeHighScore);
 		fpsNum.setFont(font);
-		fpsNum.setCharacterSize(20);
+		fpsNum.setCharacterSize(75);
 		fpsNum.setFillColor(Color::Green);
 		fpsNum.setPosition(480, 50);
 		// Wave text
@@ -1636,12 +1990,48 @@ public:
 		healthBarLabel.setCharacterSize(10);
 		healthBarLabel.setFillColor(Color::White);
 		healthBarLabel.setLetterSpacing(2.f);
+
+		dashText.setFont(font);
+		dashText.setCharacterSize(20);
+		dashText.setFillColor(Color::Cyan);
+		dashText.setPosition(10, 140);
+
+		scoreText.setFont(font);
+		scoreText.setCharacterSize(20);
+		scoreText.setFillColor(Color::White);
+		scoreText.setPosition(10, 160);
+
+		multiplierText.setFont(font);
+		multiplierText.setCharacterSize(20);
+		multiplierText.setFillColor(Color::Yellow);
+		multiplierText.setPosition(10, 180);
 	}
 
 	~GameObject() {
 		for (int i = 0; i < powerupCount; i++)
 			delete powerups[i];
 		delete[] powerups;
+		for (int i = 0; i < asteroidCount; i++)
+			delete asteroids[i];
+		delete[] asteroids;
+		delete mainMenuScreen;
+	}
+
+	void loadHighScores() {
+		ifstream file("highscores.txt");
+		if (!file.is_open()) return;
+		file >> survivalHighScore >> arcadeHighScore;
+		file.close();
+	}
+
+	void saveHighScores() {
+		ofstream file("highscores.txt");
+		file << survivalHighScore << " " << arcadeHighScore << "\n";
+		file.close();
+	}
+
+	int& getHighScoreRef(GameMode m) {
+		return (m == GameMode::Survival) ? survivalHighScore : arcadeHighScore;
 	}
 
 	void startGame(RenderWindow &window) {
@@ -1650,6 +2040,7 @@ public:
 			FloatRect Mybounds = player->getSprite().getGlobalBounds();
 			InputManager(*player, Mybounds, enemies, enemyCount, powerups, powerupCount);
 			player->update();
+			player->updateDash();
 			if (enemyCount == 0) {
 				wave++;
 				cout << "Wave No: " << wave << endl;
@@ -1658,8 +2049,15 @@ public:
 				}
 				spawnWave(enemies, enemyCount, Mybounds,mode);
 			}
-			collisionsManager(*player, enemies, enemyCount, powerups, powerupCount);
+			collisionsManager(*player, enemies, enemyCount, powerups, powerupCount, asteroids, asteroidCount);
+			updateAsteroids(asteroids, asteroidCount);
 			if (player->getStatus()) {
+				int currentScore = player->getScore();
+				int& highScore = getHighScoreRef(mode);
+				if (currentScore > highScore) {
+					highScore = currentScore;
+					saveHighScores();
+				}
 				state = GameState::Game_Over;
 			}
 			if (Keyboard::isKeyPressed(Keyboard::Escape)) {
@@ -1700,16 +2098,34 @@ public:
 				}
 			}
 
+			scoreText.setString("Score: " + std::to_string(player->getScore()));
+			window.draw(scoreText);
+
+			multiplierText.setString("Multiplier: " + std::to_string(player->getScoreMultiplier()) + "x");
+			window.draw(multiplierText);
+
+			float dashCooldown = player->getDashCooldown();
+			if (dashCooldown > 0) {
+				dashText.setString("Dash: " + std::to_string(static_cast<int>(dashCooldown + 0.99f)) + "s");
+				dashText.setFillColor(Color(255, 100, 100));
+			} else {
+				dashText.setString("Dash: Ready (E)");
+				dashText.setFillColor(Color::Cyan);
+			}
+			window.draw(dashText);
+
 			for (int i = 0; i < enemyCount; i++)
 				enemies[i]->draw(window);
 			for (int i = 0; i < powerupCount; i++)
 				powerups[i]->draw(window);
+			for (int i = 0; i < asteroidCount; i++)
+				asteroids[i]->draw(window);
 
 			fps.update();
 			fpsNum.setString(sf::String(std::to_string(fps.getFPS())));
 			waveText.setString("WAVE  " + to_string(wave));
 			Enemy* boss = getActiveBoss(enemyCount,enemies);
-			if (boss && !boss->getStatus()) {
+			if (boss && !boss->getStatus()) { // POINT OF FOCUS
 				int bossHealth = boss->getHealth();
 				int bossMaxHealth = 20; // match what you pass in spawnWave
 
@@ -1778,11 +2194,11 @@ public:
 		static bool wasPressed = false;
 		bool nowPressed = Mouse::isButtonPressed(Mouse::Left);
 
-		if (nowPressed && !wasPressed && mainScreen.hovered != -1)
+		if (nowPressed && !wasPressed && mainMenuScreen->hovered != -1)
 		{
-			if (mainScreen.hovered == 0) mode = GameMode::Arcade;
-			if (mainScreen.hovered == 1) mode = GameMode::Survival;
-			if (mainScreen.hovered == 2) window.close();
+			if (mainMenuScreen->hovered == 0) mode = GameMode::Arcade;
+			if (mainMenuScreen->hovered == 1) mode = GameMode::Survival;
+			if (mainMenuScreen->hovered == 2) window.close();
 
 			powerups = nullptr;
 			powerupCount = 0;
@@ -1795,13 +2211,23 @@ public:
 				enemyCount = 0;
 				wave = 0;
 			}
+			if (asteroidCount != 0) {
+				for (int i = 0; i < asteroidCount; i++) {
+					delete asteroids[i];
+				}
+				delete[] asteroids;
+				asteroids = nullptr;
+				asteroidCount = 0;
+			}
 			player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+			spawnAsteroids(asteroids, asteroidCount);
 			state = GameState::Playing;
 		}
 		wasPressed = nowPressed;
 		window.clear();
-		mainScreen.update(clock.restart().asSeconds(), window);
-		mainScreen.draw(window);
+		mainMenuScreen->updateHighScores(arcadeHighScore, survivalHighScore);
+		mainMenuScreen->update(clock.restart().asSeconds(), window);
+		mainMenuScreen->draw(window);
 		window.display();
 	}
 	void playGameOver(RenderWindow& window)
@@ -1828,7 +2254,16 @@ public:
 					enemyCount = 0;
 					wave = 0;
 				}
+				if (asteroidCount != 0) {
+					for (int i = 0; i < asteroidCount; i++) {
+						delete asteroids[i];
+					}
+					delete[] asteroids;
+					asteroids = nullptr;
+					asteroidCount = 0;
+				}
 				player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+				spawnAsteroids(asteroids, asteroidCount);
 				state = GameState::Playing;
 			}
 			if (gameOver.hovered == 1) state = GameState::Main_Menu;
@@ -1880,33 +2315,8 @@ public:
 	}
 };
 
-int main()
-{
-	textureCache[kPlayerTexturePath].loadFromFile(kPlayerTexturePath);
-	textureCache[kBulletTexturePath].loadFromFile(kBulletTexturePath);
-	textureCache[kDroneTexturePath].loadFromFile(kDroneTexturePath);
-	textureCache[kViperTexturePath].loadFromFile(kViperTexturePath);
-	textureCache[kSeekerTexturePath].loadFromFile(kSeekerTexturePath);
-	textureCache[ExpolsionTexturePath].loadFromFile(ExpolsionTexturePath);
-	textureCache[kCruiserTexturePath].loadFromFile(kCruiserTexturePath);
-	textureCache[kCruiserLaserTexturePath].loadFromFile(kCruiserLaserTexturePath);
-	textureCache[kLeftTurretTexturePath].loadFromFile(kLeftTurretTexturePath);
-	textureCache[kRightTurretTexturePath].loadFromFile(kRightTurretTexturePath);
-	textureCache[kTwinCannonTexturePath].loadFromFile(kTwinCannonTexturePath);
-	textureCache[kMotherShipTexturePath].loadFromFile(kMotherShipTexturePath);
-	textureCache[kSpreadPlayerPath].loadFromFile(kSpreadPlayerPath);
-	textureCache[kPiercePlayerPath].loadFromFile(kPiercePlayerPath);
-	textureCache[kPierceBulletPath].loadFromFile(kPierceBulletPath);
-	textureCache[kEmpBulletPath].loadFromFile(kEmpBulletPath);
-	textureCache[kHeartTexturePath].loadFromFile(kHeartTexturePath);
-	textureCache[kShieldTexturePath].loadFromFile(kShieldTexturePath);
-	textureCache[kEmpTexturePath].loadFromFile(kEmpTexturePath);
-	textureCache[kPlayerShieldTexturePath].loadFromFile(kPlayerShieldTexturePath);
-
+int main() {
 	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
-
-	
-	
 	windowSize = window.getSize();
 
 	GameObject SpaceShooter(GameState::Main_Menu,window);
