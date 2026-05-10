@@ -27,17 +27,26 @@ Vector2u windowSize;
 const float Drone_Vy = 0.08f;
 const float cruiserSpeed = 0.3f;
 const float Bullet_speed = .5f;
+const float Player_bullet_speed = 0.8f;
 const float viper_Vy = 0.08f;
 const float viper_Amp = 60.f;   // smaller sine wave amplitude
 const float seeker_Speed = 0.7f;
 const float viper_Freq = 0.1f;
-const float drone_Scale = 0.06f;
+const float drone_Scale = 0.04f;
 const float viper_Scale = 0.03f;
 const float cruiser_Scale = 0.12f;
 const float seeker_Scale = 0.12f;
 const float player_Scale = 0.12f;
 const float twinCannon_Scale = 0.2f;
 const float MotherShip_Scale = 0.6f;
+const int BASE_DRONES = 3;
+const int BASE_SEEKERS = 2;
+const int BASE_VIPERS = 1;
+
+const int SEEKERS_START = 4;   // wave at which seekers begin spawning
+const int VIPERS_START = 7;
+int wave = 0;
+
 
 const double pi = 3.14159;
 const int STAR_COUNT = 150;
@@ -178,6 +187,7 @@ public:
 
 class ShootableCharacter : public Entity {
 protected:
+	bool isDead;
 	int  health;
 	Clock  clock;
 	Bullet** bullets;
@@ -247,13 +257,25 @@ public:
 		health--;
 		if (health == 0) {
 			this->destroy();
+			this->setStatus();
 		}
+	}
+	void setStatus() {
+		if (health == 0)
+			isDead = 1;
+	}
+	bool getStatus() {
+		return isDead;
+	}
+	void instantKill() {
+		health = 0;
+		isDead = 1;
 	}
 	
 };
 
 class Player : public ShootableCharacter {
-
+	
 public:
 	Player(int health,float xPos, float yPos, float V_x, float V_y, const String& filename)
 		: ShootableCharacter(xPos, yPos, V_x, V_y,health) {
@@ -261,6 +283,7 @@ public:
 		this->SetOrigin();
 		this->SetScale(player_Scale, player_Scale);
 		this->setPosition();
+		isDead = 0;
 	}
 	void moveRight() {
 		this->getSprite().move(this->getVx(), 0);
@@ -275,7 +298,7 @@ public:
 		this->getSprite().move(0, this->getVy());
 	}
 	void shoot(FloatRect& Mybounds) {
-		Bullet* b = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, .30f, kBulletTexturePath);
+		Bullet* b = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, Player_bullet_speed, kBulletTexturePath);
 		b->SetScale(0.2f, 0.15f);
 		b->SetOrigin();
 		b->setPosition();
@@ -302,8 +325,7 @@ public:
 };
 
 class Enemy : public ShootableCharacter {
-protected:
-	bool isDead;
+
 public:
 	Enemy(float x, float y, float Vy, float Vx, int health, const String& filename)
 		: ShootableCharacter(x, y, Vx, Vy,health) {
@@ -314,15 +336,6 @@ public:
 	virtual void move() = 0;
 	virtual void update() = 0;
 	virtual void draw(RenderWindow& window) = 0;
-
-	void setStatus() {
-		if(health == 0)
-		   isDead = 1;
-	}
-	bool getStatus() {
-		return isDead;
-	}
-	
 	virtual ~Enemy() {}
 };
 class Drone : public Enemy {
@@ -339,9 +352,9 @@ public:
 	}
 
 	void shoot(FloatRect Bounds) override {
-		if (clock.getElapsedTime().asSeconds() >= 1.5f) {
+		if (clock.getElapsedTime().asSeconds() >= 1.5f && this->getSprite().getGlobalBounds().top >= 0) {
 			Bullet* b = new Bullet(3, false, Bounds.left + (Bounds.width / 2.0f), Bounds.top + Bounds.height, 0.5f, Bullet_speed, kBulletTexturePath);
-			b->SetScale(0.2f, -0.15f);
+			b->SetScale(0.1f, -0.1f);
 			b->SetOrigin();
 			b->setPosition();
 			addBullet(b);
@@ -388,7 +401,7 @@ public:
 	void shoot(FloatRect Bounds) override {
 		if (clock.getElapsedTime().asSeconds() >= 1.5f) {
 			Bullet* b = new Bullet(3, false, Bounds.left + (Bounds.width / 2.0f), Bounds.top + Bounds.height, 0.5f, Bullet_speed, kBulletTexturePath);
-			b->SetScale(0.2f, -0.15f);
+			b->SetScale(0.1f, -0.1f);
 			b->SetOrigin();
 			b->setPosition();
 			addBullet(b);
@@ -882,7 +895,7 @@ void deleteEnemy(int i,T** &enemies,int &enemyCount) {
 	enemyCount--;
 	cout << "Enemy deleted\n";
 }
-void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropCount ) {
+void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount ) {
 
 	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
 
@@ -954,7 +967,6 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 						Me.deleteBullet(i);
 						bulletDeleted = true;
 						turrets[t]->takeDamage();
-						turrets[t]->setStatus();
 
 						if (turrets[t]->getStatus()) {
 							for (int r = turrets[t]->getBulletCount() - 1; r >= 0; r--)
@@ -977,7 +989,6 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 						Me.deleteBullet(i);
 						bulletDeleted = true;
 						tc->takeDamage();
-						tc->setStatus();
 						if (tc->getStatus()) {
 							for (int r = tc->getBulletCount() - 1; r >= 0; r--)
 								tc->deleteBullet(r);
@@ -994,7 +1005,6 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 						Me.deleteBullet(i);
 						bulletDeleted = true;
 						seekers[s]->takeDamage();
-						seekers[s]->setStatus();
 						dropPosition = seekers[s]->getSprite().getGlobalBounds();
 						M->destroySeekers(s);
 						s--;
@@ -1005,7 +1015,6 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 					Me.deleteBullet(i);
 					bulletDeleted = true;
 					enemies[k]->takeDamage();
-					enemies[k]->setStatus();
 				}
 			}
 			else {
@@ -1013,7 +1022,6 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 					Me.deleteBullet(i);
 					bulletDeleted = true;
 					enemies[k]->takeDamage();
-					enemies[k]->setStatus();
 				}
 			}
 		}
@@ -1027,20 +1035,17 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 			for (int i = 0; i < M->getSeekerCount(); i++) {
 				if (seekers[i]->getSprite().getGlobalBounds().intersects(playerBounds)) {
 					seekers[i]->destroy();
-					seekers[i]->setStatus();
-					Me.destroy();
-					cout << "Player Died\n";
+					Me.instantKill();
 				}
 			}
 		}
 		else {
 			if (enemies[k]->getSprite().getGlobalBounds().intersects(playerBounds)) {
 				enemies[k]->destroy();
-				enemies[k]->setStatus();
 				for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--)
 					enemies[k]->deleteBullet(r);
-				Me.destroy();
-				cout << "Player Died\n";
+				Me.instantKill();
+				
 			}
 		}
 
@@ -1091,6 +1096,361 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, int &dropC
 	}
 }
 
+enum class GameMode {Survival,Arcade};
+enum class GameState {
+	Playing, Main_Menu, Paused,Game_Over
+};
+void InputManager(Player& Me, FloatRect Mybounds) {
+	static int keyFrame = 0;
+	if (Keyboard::isKeyPressed(Keyboard::D) && Mybounds.left + Mybounds.width < windowSize.x) {
+		Me.moveRight();
+	}
+	if (Keyboard::isKeyPressed(Keyboard::A) && Mybounds.left > 0) {
+		Me.moveLeft();
+	}
+	if (Keyboard::isKeyPressed(Keyboard::W) && Mybounds.top > 0) {
+		Me.moveUp();
+	}
+	if (Keyboard::isKeyPressed(Keyboard::S) && Mybounds.top < windowSize.y) {
+		Me.moveDown();
+	}
+	if (Keyboard::isKeyPressed(Keyboard::Space) && keyFrame >= 150) {
+		keyFrame = 0;
+		Me.shoot(Mybounds);
+	}
+	if(keyFrame < 150)
+	keyFrame++;
+}
+
+float RandomValue(float n) {
+	return static_cast<float>(rand()) / RAND_MAX * n;
+}
+float RandomValue(float min, float max) {
+	return min + static_cast<float>(rand()) / RAND_MAX * (max - min);
+}
+void spawnWave(Enemy**& enemies, int& enemyCount,FloatRect Me,GameMode mode)
+{
+	if (mode == GameMode::Survival) {
+		int droneCount = BASE_DRONES + (wave / 2) * BASE_DRONES;
+		int seekerCount = (wave >= SEEKERS_START) ? BASE_SEEKERS + (wave / 3) * BASE_SEEKERS : 0;
+		int viperCount = (wave >= VIPERS_START) ? BASE_VIPERS + (wave / 4) * BASE_VIPERS : 0;
+		enemyCount = droneCount + seekerCount + viperCount;
+
+		delete[] enemies;
+		enemies = new Enemy * [enemyCount];
+
+		int i = 0;
+
+		for (int d = 0; d < droneCount; d++)
+			enemies[i++] = new Drone{ RandomValue(windowSize.x),RandomValue(-500.f,0.f), Drone_Vy, 0, 1, kDroneTexturePath };
+
+		// Spawn seekers (only after SEEKERS_START wave)
+		for (int s = 0; s < seekerCount; s++)
+			enemies[i++] = new Seeker(Me.left, Me.top, RandomValue(windowSize.x), RandomValue(-500.f, 0.f), seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
+
+		// Spawn vipers (only after VIPERS_START wave)
+		for (int v = 0; v < viperCount; v++)
+			enemies[i++] = new Viper{ RandomValue(windowSize.x),RandomValue(-400.f,0.f), viper_Vy,0, 1, kViperTexturePath };
+	}
+	if (mode == GameMode::Arcade) {
+		int droneCount = (wave>= 0 && wave % 5 != 0) ? BASE_DRONES + (wave / 3) * BASE_DRONES : 0;
+		int seekerCount = (wave >= SEEKERS_START && wave % 5 != 0) ? BASE_SEEKERS + (wave / 3) * BASE_SEEKERS : 0;
+		int viperCount = (wave >= VIPERS_START && wave % 5 != 0) ? BASE_VIPERS + (wave / 4) * BASE_VIPERS : 0;
+		int cruiserCount = (wave == 5) ? 1 : 0;
+		int TwinCannonCount = (wave == 10) ? 1 : 0;
+		int MotherShipCount = (wave == 15) ? 1 : 0;
+
+		enemyCount = droneCount + seekerCount + viperCount + MotherShipCount + TwinCannonCount + cruiserCount;
+
+		delete[] enemies;
+		enemies = new Enemy * [enemyCount];
+
+		int i = 0;
+
+		for (int d = 0; d < droneCount; d++)
+			enemies[i++] = new Drone{ RandomValue(windowSize.x),RandomValue(-500.f,0.f), Drone_Vy, 0, 1, kDroneTexturePath };
+
+		// Spawn seekers (only after SEEKERS_START wave)
+		for (int s = 0; s < seekerCount; s++)
+			enemies[i++] = new Seeker(Me.left, Me.top, RandomValue(windowSize.x), RandomValue(-500.f, 0.f), seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
+
+		// Spawn vipers (only after VIPERS_START wave)
+		for (int v = 0; v < viperCount; v++)
+			enemies[i++] = new Viper{ RandomValue(windowSize.x),RandomValue(-400.f,0.f), viper_Vy,0, 1, kViperTexturePath };
+
+		if (wave == 5) {
+			enemies[i++] = new Cruiser{ 100, 50, 0, cruiserSpeed, 20, kCruiserTexturePath };
+		}
+		if (wave == 10) {
+			enemies[i++] = new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath);
+		}
+		if (wave == 15) {
+			enemies[i++]= new MotherShip(300, 100, 0, 0, 20, kMotherShipTexturePath);
+	
+		}
+	}
+}
+
+class Screen
+{
+public:
+	static const int OPTION_COUNT = 3;
+
+	RectangleShape bars[OPTION_COUNT];
+	Text labels[OPTION_COUNT];
+	Text title;
+	Font font;
+
+	int   hovered = -1;  // -1 = no hover
+	float glowTimer = 0.f;
+	Screen(sf::RenderWindow& window, const char* Header,const char* Option1, const char* Option2, const char* Option3)
+	{
+		font.loadFromFile("C:/Users/Administrator/source/repos/SpaceShooter/SpaceShooter/assets/fonts/Savery.ttf");
+
+		const char* labelStr[OPTION_COUNT] = {
+			Option1,
+			Option2,
+			Option3
+		};
+		float centerX = window.getSize().x / 2.f;  // 280
+		float startY = 300.f;                      // where first bar begins
+		float spacing = 80.f;
+
+		// Title
+		title.setFont(font);
+		title.setString(Header);
+		title.setCharacterSize(11);
+		title.setLetterSpacing(6.f);
+		title.setFillColor(sf::Color(192, 200, 255, 178));
+		sf::FloatRect tb = title.getLocalBounds();
+		title.setOrigin(tb.width / 2.f, 0.f);
+		title.setPosition(centerX, 220.f);
+
+		for (int i = 0; i < OPTION_COUNT; i++)
+		{
+			// Bar — width capped to fit 560px window
+			bars[i].setSize(sf::Vector2f(300.f, 54.f));
+			bars[i].setFillColor(sf::Color(13, 13, 32));
+			bars[i].setOutlineThickness(1.5f);
+			bars[i].setOutlineColor(sf::Color(30, 30, 68));
+			bars[i].setOrigin(150.f, 0.f);                        // half of 300
+			bars[i].setPosition(centerX, startY + i * spacing);
+
+			// Label
+			labels[i].setFont(font);
+			labels[i].setString(labelStr[i]);
+			labels[i].setCharacterSize(12);
+			labels[i].setLetterSpacing(2.f);
+			labels[i].setFillColor(sf::Color(100, 119, 170));
+			sf::FloatRect lb = labels[i].getLocalBounds();
+			labels[i].setOrigin(lb.width / 2.f, lb.top + lb.height / 2.f);  // centered
+			labels[i].setPosition(centerX, startY + i * spacing + 27.f);
+		}
+	}
+
+	void update(float dt,RenderWindow &window)
+	{
+		// Get mouse position
+		sf::Vector2i mouse = sf::Mouse::getPosition(window);
+
+		int newHovered = -1;
+		for (int i = 0; i < OPTION_COUNT; i++)
+		{
+			if (bars[i].getGlobalBounds().contains(static_cast<float>(mouse.x),static_cast<float>(mouse.y)))
+			{
+				newHovered = i;
+				break;
+			}
+		}
+
+		// Reset previous hovered bar if hover changed
+		if (newHovered != hovered)
+		{
+			if (hovered != -1)
+			{
+				bars[hovered].setOutlineColor(sf::Color(30, 30, 68));
+				bars[hovered].setOutlineThickness(1.5f);
+				labels[hovered].setFillColor(sf::Color(100, 119, 170));
+			}
+			hovered = newHovered;
+			glowTimer = 0.f;
+		}
+		// Animate glow on hovered bar
+		if (hovered != -1)
+		{
+			glowTimer += dt;
+			float t = (std::sin(glowTimer * 3.f) + 1.f) / 2.f;
+
+			sf::Uint8 r = static_cast<sf::Uint8>(51 + t * 76);
+			sf::Uint8 g = static_cast<sf::Uint8>(68 + t * 68);
+			sf::Uint8 b = static_cast<sf::Uint8>(187 + t * 68);
+			bars[hovered].setOutlineColor(sf::Color(r, g, b));
+			bars[hovered].setOutlineThickness(2.f + t * 1.5f);
+			labels[hovered].setFillColor(sf::Color(221, 232, 255));
+		}
+	}
+
+	void draw(sf::RenderWindow& window)
+	{
+		sf::RectangleShape overlay(sf::Vector2f(static_cast<float>(window.getSize().x),static_cast<float>(window.getSize().y)));
+		overlay.setFillColor(sf::Color(0, 0, 0, 160));
+		window.draw(overlay);
+
+		window.draw(title);
+		for (int i = 0; i < OPTION_COUNT; i++)
+		{
+			window.draw(bars[i]);
+			window.draw(labels[i]);
+		}
+	}
+};
+
+class GameObject {
+public:
+
+	GameState state;
+	GameMode mode;
+	Screen pauseScreen;
+	Screen mainScreen;
+	Screen gameOver;
+	Player* player;
+	Enemy** enemies;
+	int enemyCount;
+	Star stars[STAR_COUNT];
+	Clock clock;
+
+	GameObject(GameState s,RenderWindow &window) : state(s),pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), mainScreen(window, "Main Menu", "Arcade Mode", "Survival Mode", "Exit"),gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit") {
+		player = nullptr;
+		enemies = nullptr;
+		enemyCount = 0;
+	}
+
+	void startGame(RenderWindow &window) {
+
+		if (state == GameState::Playing) {
+			FloatRect Mybounds = player->getSprite().getGlobalBounds();
+			InputManager(*player, Mybounds);
+			player->update();
+			if (enemyCount == 0) {
+				wave++;
+				cout << "Wave No: " << wave << endl;
+				spawnWave(enemies, enemyCount, Mybounds,mode);
+			}
+			collisionsManager(*player, enemies, enemyCount);
+			if (player->getStatus()) {
+				state = GameState::Game_Over;
+			}
+			if (Keyboard::isKeyPressed(Keyboard::Escape)) {
+				state = GameState::Paused;
+			}
+			window.clear();
+			for (int i = 0; i < STAR_COUNT; i++) {
+				stars[i].move();
+				stars[i].draw(window);
+			}
+			player->draw(window);
+			for (int i = 0; i < enemyCount; i++)
+				enemies[i]->draw(window);
+
+			window.display();
+		}
+		if (state == GameState::Paused) {
+		    playPaused(window);
+		}
+		if (state == GameState::Main_Menu) {
+			if (!player) delete player;
+			player = nullptr;
+			playMainMenu(window);
+		}
+		if (state == GameState::Game_Over) {
+			delete player;
+			player = nullptr;
+			playGameOver(window);
+		}
+	}
+	void playPaused(RenderWindow& window)
+	{
+		// Use just-pressed, not held
+		static bool wasPressed = false;
+		bool nowPressed = Mouse::isButtonPressed(Mouse::Left);
+
+		if (nowPressed && !wasPressed && pauseScreen.hovered != -1)
+		{
+			if (pauseScreen.hovered == 0) state = GameState::Playing;
+			if (pauseScreen.hovered == 1) state = GameState::Main_Menu;
+			if (pauseScreen.hovered == 2) window.close();
+		}
+		wasPressed = nowPressed;
+
+		window.clear();
+		pauseScreen.update(clock.restart().asSeconds(), window);
+		pauseScreen.draw(window);
+		window.display();
+	}
+	void playMainMenu(RenderWindow& window)
+	{   
+		static bool wasPressed = false;
+		bool nowPressed = Mouse::isButtonPressed(Mouse::Left);
+
+		if (nowPressed && !wasPressed && mainScreen.hovered != -1)
+		{
+			if (mainScreen.hovered == 0) mode = GameMode::Arcade;
+			if (mainScreen.hovered == 1) mode = GameMode::Survival;
+			if (mainScreen.hovered == 2) window.close();
+
+			if (enemyCount != 0) {
+				for (int i = 0; i < enemyCount; i++) {
+					delete enemies[i];
+				}
+				delete[] enemies;
+				enemies = nullptr;
+				enemyCount = 0;
+				wave = 0;
+			}
+			player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+			state = GameState::Playing;
+		}
+		wasPressed = nowPressed;
+		window.clear();
+		mainScreen.update(clock.restart().asSeconds(), window);
+		mainScreen.draw(window);
+		window.display();
+	}
+	void playGameOver(RenderWindow& window)
+	{
+
+
+		static bool wasPressed = false;
+		bool nowPressed = Mouse::isButtonPressed(Mouse::Left);
+
+		if (nowPressed && !wasPressed && gameOver.hovered != -1)
+		{
+			if (gameOver.hovered == 0) {
+				if (enemyCount != 0) {
+					for (int i = 0; i < enemyCount; i++) {
+						delete enemies[i];
+					}
+					delete[] enemies;
+					enemies = nullptr;
+					enemyCount = 0;
+					wave = 0;
+				}
+				player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+				state = GameState::Playing;
+			}
+			if (gameOver.hovered == 1) state = GameState::Main_Menu;
+			if (gameOver.hovered == 2) window.close();
+
+		}
+		wasPressed = nowPressed;
+
+		window.clear();
+		gameOver.update(clock.restart().asSeconds(), window);
+		gameOver.draw(window);
+		window.display();
+	}
+};
+
 int main()
 {
 	textureCache[kPlayerTexturePath].loadFromFile(kPlayerTexturePath);
@@ -1107,59 +1467,22 @@ int main()
 	textureCache[kMotherShipTexturePath].loadFromFile(kMotherShipTexturePath);
 
 	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
+
+	
+	
 	windowSize = window.getSize();
-	Player Me(5, windowSize.x / 2, windowSize.y/2 , .4f, .4f, kPlayerTexturePath);
-	Enemy** enemy = new Enemy * [1];
-	Star stars[STAR_COUNT];   
-	int enemyCount = 1;
-	int dropCount = 0;
-	//enemy[0] = new Seeker(Me.getSprite().getGlobalBounds().left , Me.getSprite().getGlobalBounds().top , 100, 100, seeker_Speed, seeker_Speed, 1, kSeekerTexturePath);
-	//enemy[0] = new Viper{ 300, 0, viper_Vy,0, 1, kViperTexturePath }; // Viper
-	//enemy[0] = new Drone{ 100, 100, Drone_Vy, 0, 1, kDroneTexturePath }; // Drone
-	//enemy[0] = new Cruiser{ 100, 50, 0, cruiserSpeed, 20, kCruiserTexturePath };
-	//enemy[0] = new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath);
-	enemy[0] = new MotherShip(300, 100, 0, 0, 20, kMotherShipTexturePath);
+
+	GameObject SpaceShooter(GameState::Main_Menu,window);
 	while (window.isOpen()) {
-		FloatRect Mybounds = Me.getSprite().getGlobalBounds();
+
 		Event event;
 		while (window.pollEvent(event)) {
 			if (event.type == Event::Closed) {
 				window.close();
 			}
-			if (Keyboard::isKeyPressed(Keyboard::Escape)) {
-				window.close();
-			}
-			if (event.type == Event::KeyPressed && event.key.code == Keyboard::Space) {
-				Me.shoot(Mybounds);
-			}
 		}
+		SpaceShooter.startGame(window);
 
-		if (Keyboard::isKeyPressed(Keyboard::D) && Mybounds.left + Mybounds.width < windowSize.x) {
-			Me.moveRight();
-		}
-		if (Keyboard::isKeyPressed(Keyboard::A) && Mybounds.left > 0) {
-			Me.moveLeft();
-		}
-		if (Keyboard::isKeyPressed(Keyboard::W) && Mybounds.top > 0) {
-			Me.moveUp();
-		}
-		if (Keyboard::isKeyPressed(Keyboard::S) && Mybounds.top < windowSize.y) {
-			Me.moveDown();
-		}
-		// Draw stars FIRST so everything renders on top
-		
-		Me.update();
-		collisionsManager(Me, enemy,enemyCount, dropCount);
-		window.clear();
-		for (int i = 0; i < STAR_COUNT; i++) {
-			stars[i].move();
-			stars[i].draw(window);
-		}
-		Me.draw(window);
-		for (int i = 0; i < enemyCount; i++)
-			enemy[i]->draw(window);
-		
-		window.display();
 	}
 
 	return 0;
