@@ -84,9 +84,9 @@ const String kEmpBulletPath = resolvePath("Images/Player/empBullet.png");
 const String kHeartTexturePath = resolvePath("Images/HUD/heart.png");
 const String kShieldTexturePath = resolvePath("Images/HUD/shield.png");
 const String kEmpTexturePath = resolvePath("Images/HUD/emp.png");
-
+const String kPlayerShieldTexturePath = resolvePath("Images/Player/Shield.png");
 //replace this with your font path 
-const String FontPath = resolvePath("/assets/fonts/Savery.ttf");
+const String FontPath = resolvePath("/assets/fonts/Orbitron Medium.ttf");
 std::map<String, Texture> textureCache;
 
 IntRect ExplosionFrames(0, 0, 182, 182);
@@ -180,6 +180,7 @@ public:
 	void draw(RenderWindow& window) {
 		window.draw(sprite);
 	}
+
 };
 
 class Bullet :public Entity {
@@ -224,8 +225,11 @@ public:
 		currentFrame = 0;
 	}
 
-	ShootableCharacter(float xPos, float yPos, float V_x, float V_y,int health): Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
+	ShootableCharacter(float xPos, float yPos, float V_x, float V_y, int health) : Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
 		this->health = health;
+	}
+	bool isExpolode() {
+		return isExploding;
 	}
 
 	virtual ~ShootableCharacter() {
@@ -320,6 +324,7 @@ public:
 	// weapon edit
 	int currentWeapon; // three types, standard, spreading, piercing
 	int shieldHits; // capped to 2 even if one more shield is acquired
+	Sprite shield;
 	int empCount; // 3 max
 	bool pierce;
 	int pierceCount;
@@ -331,6 +336,9 @@ public:
 		this->SetOrigin();
 		this->SetScale(player_Scale, player_Scale);
 		this->setPosition();
+		shield.setTexture(textureCache[kPlayerShieldTexturePath]);
+		shield.setOrigin(shield.getLocalBounds().width / 2.f, shield.getLocalBounds().height / 2.f);
+		shield.setScale(0.05, 0.05);
 		isDead = 0;
 		pierce = 0;
 		pierceCount = 0;
@@ -396,7 +404,7 @@ public:
 
 	void empShoot(FloatRect& Mybounds) {
 		if (empCount > 0) {
-			Bullet* b = new Bullet(10, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, Player_bullet_speed, kEmpBulletPath);
+			Bullet* b = new Bullet(10, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0, 0, kEmpBulletPath);
 			b->SetScale(0.06f, 0.06f); b->SetOrigin(); b->setPosition(); addBullet(b);
 			empCount--; 
 			dt = 0.06f;     
@@ -426,14 +434,19 @@ public:
 		return getBullets();
 	}
 	void draw(RenderWindow& window) {
+		if (shieldHits > 0) {
+			window.draw(shield);
+		}
 		Entity::draw(window);
 		drawBullets(window);
 	}
 	void update() {
 		updateExplosion();
+		shield.setPosition(sprite.getPosition().x, sprite.getPosition().y);
 		for (int i = 0; i < bulletCount; i++) {
-			if (empShot) {  
-				dt += 0.015;
+			bool isEmpBullet = (empShot && i == bulletCount - 1);
+			if (isEmpBullet) {
+				dt += 0.015f;
 				bullets[i]->getSprite().setScale(dt, dt);
 				if (dt > 1) {
 					empShot = false;
@@ -442,10 +455,12 @@ public:
 					i--;
 				}
 			}
-			else 
-			bullets[i]->getSprite().move(bullets[i]->getVx(), -bullets[i]->getVy());
+			else {
+				bullets[i]->getSprite().move(bullets[i]->getVx(), -bullets[i]->getVy());
+			}
 		}
 		for (int i = 0; i < bulletCount; i++) {
+			if (empShot) break; // don't delete EMP bullet during animation
 			if (bullets[i]->getSprite().getGlobalBounds().top <= 0) {
 				this->deleteBullet(i);
 				i--;
@@ -466,6 +481,10 @@ public:
 	virtual void update() = 0;
 	virtual void draw(RenderWindow& window) = 0;
 	virtual ~Enemy() {}
+	float getHealth() {
+		return health;
+	}
+
 };
 class Drone : public Enemy {
 public:
@@ -1215,15 +1234,20 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 				}
 			}
 			else {
-				if (bulletBounds.intersects(enemies[k]->getSprite().getGlobalBounds())) {
-					if (!Me.getPierceFlag() || Me.pierceCount >= 2) {
+				if (bulletBounds.intersects(enemies[k]->getSprite().getGlobalBounds()) && !enemies[k]->isExpolode()) {
+					enemies[k]->takeDamage();
+					if (!Me.getPierceFlag()) {
 						Me.deleteBullet(i);
 						bulletDeleted = true;
-						Me.pierceCount = 0;
 					}
-					enemies[k]->takeDamage();
-					Me.pierceCount++;
-
+					else {
+						Me.pierceCount++;
+						if (Me.pierceCount >= 2) {
+							Me.deleteBullet(i);
+							bulletDeleted = true;
+							Me.pierceCount = 0;
+						}
+					}
 				}
 			}
 		}
@@ -1243,7 +1267,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			}
 		}
 		else {
-			if (enemies[k]->getSprite().getGlobalBounds().intersects(playerBounds)) {
+			if (enemies[k]->getSprite().getGlobalBounds().intersects(playerBounds) && !enemies[k]->isExpolode()) {
 				enemies[k]->takeDamage();
 				for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--)
 					enemies[k]->deleteBullet(r);
@@ -1291,7 +1315,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			FloatRect b = enemies[k]->getSprite().getGlobalBounds();
 			if (b.top + b.height >= windowSize.y) {
 				Vector2f pos = enemies[k]->getSprite().getPosition();
-				spawnPowerup(pos.x, pos.y, powerups, powerupCount); //should it spawn now?
+				spawnPowerup(pos.x, pos.y, powerups, powerupCount); //should it spawn now? ye
 				enemies[k]->destroy();
 				deleteEnemy<Enemy>(k, enemies, enemyCount);
 				k--;
@@ -1322,7 +1346,15 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 		}
 	}
 }
-
+Enemy* getActiveBoss(int enemyCount,Enemy** enemies) {
+	for (int i = 0; i < enemyCount; i++) {
+		if (dynamic_cast<Cruiser*>(enemies[i]) ||
+			dynamic_cast<TwinCannon*>(enemies[i]) ||
+			dynamic_cast<MotherShip*>(enemies[i]))
+			return enemies[i];
+	}
+	return nullptr;
+}
 enum class GameMode {Survival,Arcade};
 enum class GameState {
 	Playing, Main_Menu, Paused,Game_Over,Game_win
@@ -1429,10 +1461,10 @@ void spawnWave(Enemy**& enemies, int& enemyCount,FloatRect Me,GameMode mode)
 			enemies[i++] = new Cruiser{ 100, 50, 0, cruiserSpeed, 20, kCruiserTexturePath };
 		}
 		if (wave == 10) {
-			enemies[i++] = new TwinCannon(300, 100, 0, 0, 20, kTwinCannonTexturePath);
+			enemies[i++] = new TwinCannon(300, 100, 0, 0, 30, kTwinCannonTexturePath);
 		}
 		if (wave == 15) {
-			enemies[i++]= new MotherShip(300, 100, 0, 0, 20, kMotherShipTexturePath);
+			enemies[i++]= new MotherShip(300, 100, 0, 0, 40, kMotherShipTexturePath);
 	
 		}
 	}
@@ -1462,11 +1494,10 @@ public:
 		float centerX = window.getSize().x / 2.f;  // 280
 		float startY = 300.f;                      // where first bar begins
 		float spacing = 80.f;
-
 		// Title
 		title.setFont(font);
 		title.setString(Header);
-		title.setCharacterSize(11);
+		title.setCharacterSize(20);
 		title.setLetterSpacing(6.f);
 		title.setFillColor(sf::Color(192, 200, 255, 178));
 		sf::FloatRect tb = title.getLocalBounds();
@@ -1571,6 +1602,10 @@ public:
 	FPS fps;
 	Text fpsNum;
 	Font font;
+	Text waveText;
+	RectangleShape healthBarBg;
+	RectangleShape healthBarFill;
+	Text healthBarLabel;
 
 	GameObject(GameState s,RenderWindow &window) : state(s),pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), mainScreen(window, "Main Menu", "Arcade Mode", "Survival Mode", "Exit"),gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit"),gameWin(window, "You Win!", "Play Again", "Back To Main Menu", "Exit") {
 		player = nullptr;
@@ -1580,9 +1615,27 @@ public:
 		powerupCount = 0;
 		font.loadFromFile(FontPath);
 		fpsNum.setFont(font);
-		fpsNum.setCharacterSize(75);
+		fpsNum.setCharacterSize(20);
 		fpsNum.setFillColor(Color::Green);
-		fpsNum.setPosition(380, 00);
+		fpsNum.setPosition(480, 50);
+		// Wave text
+		waveText.setFont(font);
+		waveText.setCharacterSize(25);
+		waveText.setFillColor(Color(180, 180, 255));
+		waveText.setPosition(10, 100);
+
+		healthBarBg.setSize(Vector2f(200.f, 18.f));
+		healthBarBg.setFillColor(Color(40, 0, 0));
+		healthBarBg.setOutlineColor(Color(150, 0, 0));
+		healthBarBg.setOutlineThickness(1.5f);
+		healthBarBg.setPosition(windowSize.x / 2.f - 100.f, 18.f);
+		healthBarFill.setSize(Vector2f(200.f, 18.f));
+		healthBarFill.setFillColor(Color(220, 30, 30));
+		healthBarFill.setPosition(windowSize.x / 2.f - 100.f, 18.f);
+		healthBarLabel.setFont(font);
+		healthBarLabel.setCharacterSize(10);
+		healthBarLabel.setFillColor(Color::White);
+		healthBarLabel.setLetterSpacing(2.f);
 	}
 
 	~GameObject() {
@@ -1618,7 +1671,7 @@ public:
 				stars[i].draw(window);
 			}
 			player->draw(window);
-			// draw hearts and shields
+			// draw hearts and shields ok i get it bro
 			{
 				Sprite heart;
 				heart.setTexture(textureCache[kHeartTexturePath]);
@@ -1646,6 +1699,7 @@ public:
 					window.draw(emp);
 				}
 			}
+
 			for (int i = 0; i < enemyCount; i++)
 				enemies[i]->draw(window);
 			for (int i = 0; i < powerupCount; i++)
@@ -1653,6 +1707,33 @@ public:
 
 			fps.update();
 			fpsNum.setString(sf::String(std::to_string(fps.getFPS())));
+			waveText.setString("WAVE  " + to_string(wave));
+			Enemy* boss = getActiveBoss(enemyCount,enemies);
+			if (boss && !boss->getStatus()) {
+				int bossHealth = boss->getHealth();
+				int bossMaxHealth = 20; // match what you pass in spawnWave
+
+				float ratio = max(0.f, min(1.f, bossHealth / (float)bossMaxHealth));
+				healthBarFill.setSize(Vector2f(200.f * ratio, 18.f));
+
+				// color shifts red -> yellow -> green
+				Uint8 r = static_cast<Uint8>(220 * (1.f - ratio));
+				Uint8 g = static_cast<Uint8>(200 * ratio);
+				healthBarFill.setFillColor(Color(220 - r / 2, g, 30));
+
+				string bossName = dynamic_cast<Cruiser*>(boss) ? "CRUISER" :
+					dynamic_cast<TwinCannon*>(boss) ? "TWIN CANNON" :
+					"MOTHERSHIP";
+				FloatRect lb = healthBarLabel.getLocalBounds();
+				healthBarLabel.setString(bossName);
+				healthBarLabel.setOrigin(lb.width / 2.f, 0);
+				healthBarLabel.setPosition(windowSize.x / 2.f, 2.f);
+
+				window.draw(healthBarBg);
+				window.draw(healthBarFill);
+				window.draw(healthBarLabel);
+			}
+			window.draw(waveText);
 			window.draw(fpsNum);
 			window.display();
 		}
@@ -1820,6 +1901,7 @@ int main()
 	textureCache[kHeartTexturePath].loadFromFile(kHeartTexturePath);
 	textureCache[kShieldTexturePath].loadFromFile(kShieldTexturePath);
 	textureCache[kEmpTexturePath].loadFromFile(kEmpTexturePath);
+	textureCache[kPlayerShieldTexturePath].loadFromFile(kPlayerShieldTexturePath);
 
 	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
 
