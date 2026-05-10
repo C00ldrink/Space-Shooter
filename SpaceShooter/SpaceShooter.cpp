@@ -86,10 +86,7 @@ const String kShieldTexturePath = resolvePath("Images/HUD/shield.png");
 const String kEmpTexturePath = resolvePath("Images/HUD/emp.png");
 
 //replace this with your font path 
-const String FontPath = resolvePath("../lib/SFML-2.6.2/examples/tennis/resources/tuffy.ttf");
-
-Texture heartTex, nukeTex, pierceTex, spreadTex;
-
+const String FontPath = resolvePath("/assets/fonts/Savery.ttf");
 std::map<String, Texture> textureCache;
 
 IntRect ExplosionFrames(0, 0, 182, 182);
@@ -213,14 +210,18 @@ protected:
 	bool isDead;
 	int  health;
 	Clock  clock;
+	bool isExploding;
+	Clock explosionClock;
 	Bullet** bullets;
 	int bulletCount;
 	int bulletCapacity;
-
+	int currentFrame;
 public:
 	ShootableCharacter()
 		: Entity(), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
 		health = 0;
+		isExploding = 0;
+		currentFrame = 0;
 	}
 
 	ShootableCharacter(float xPos, float yPos, float V_x, float V_y,int health): Entity(xPos, yPos, V_x, V_y), bullets(nullptr), bulletCount(0), bulletCapacity(0) {
@@ -243,6 +244,20 @@ public:
 		return bulletCount;
 	}
 
+	void updateExplosion() {
+		if (!isExploding) return;
+		if (explosionClock.getElapsedTime().asMilliseconds() >= 80) { 
+			currentFrame++;
+			if (currentFrame >= explosionFrames) {
+				isExploding = false;
+				setStatus(); //dead delete
+				return;
+			}
+			IntRect frame(currentFrame * 182, 0, 182, 182);
+			sprite.setTextureRect(frame);
+			explosionClock.restart();
+		}
+	}
 	void addBullet(Bullet* b) {
 		if (bulletCount >= bulletCapacity) {
 			bulletCapacity = (bulletCapacity == 0) ? 10 : bulletCapacity * 2;
@@ -272,20 +287,22 @@ public:
 	}
 
 	void destroy() {
-		this->loadTexture(ExpolsionTexturePath, ExplosionFrames);
-		SetScale(0.7f, 0.7f);
+		isExploding = true;
+		currentFrame = 0;
+		this->loadTexture(ExpolsionTexturePath, ExplosionFrames); // frame 0
+		SetScale(0.5f, 0.5f);
 		SetOrigin();
+		explosionClock.restart();
 	}
 
 	virtual void takeDamage() {
+		if (isExploding) return;
 		health--;
-		if (health == 0) {
-			this->destroy();
-			this->setStatus();
+		if (health <= 0) {
+			destroy();
 		}
 	}
 	void setStatus() {
-		if (health == 0)
 			isDead = 1;
 	}
 	bool getStatus() {
@@ -293,7 +310,6 @@ public:
 	}
 	void instantKill() {
 		health = 0;
-		isDead = 1;
 	}
 	
 };
@@ -305,14 +321,21 @@ public:
 	int currentWeapon; // three types, standard, spreading, piercing
 	int shieldHits; // capped to 2 even if one more shield is acquired
 	int empCount; // 3 max
-
-	Player(int health,float xPos, float yPos, float V_x, float V_y, const String& filename)
-		: ShootableCharacter(xPos, yPos, V_x, V_y,health), currentWeapon(weaponStandard), shieldHits(0), empCount(1) { // this
+	bool pierce;
+	int pierceCount;
+	bool empShot;
+	float dt;
+	Player(int health, float xPos, float yPos, float V_x, float V_y, const String& filename)
+		: ShootableCharacter(xPos, yPos, V_x, V_y, health), currentWeapon(weaponStandard), shieldHits(0), empCount(1) { // this
 		this->loadTexture(filename);
 		this->SetOrigin();
 		this->SetScale(player_Scale, player_Scale);
 		this->setPosition();
 		isDead = 0;
+		pierce = 0;
+		pierceCount = 0;
+		empShot = 0;
+		dt = 0.01;
 	}
 	void moveRight() {
 		this->getSprite().move(this->getVx(), 0);
@@ -328,26 +351,31 @@ public:
 	}
 
 	void shoot(FloatRect& Mybounds) {
-		if (currentWeapon == weaponSpread) { //triple bullets!!!
+		if (currentWeapon == weaponSpread) { //triple bullets!!! 
 			float cx = Mybounds.left + Mybounds.width / 2.0f;
-			Bullet* b1 = new Bullet(3, false, cx - 15, Mybounds.top, 0.5f, Player_bullet_speed, kBulletTexturePath);
-			Bullet* b2 = new Bullet(3, false, cx, Mybounds.top, 0.5f, Player_bullet_speed, kBulletTexturePath);
-			Bullet* b3 = new Bullet(3, false, cx + 15, Mybounds.top, 0.5f, Player_bullet_speed, kBulletTexturePath);
+			Bullet* b1 = new Bullet(3, false, cx - 15, Mybounds.top, -.09f, Player_bullet_speed, kBulletTexturePath); // left diagonal
+			Bullet* b2 = new Bullet(3, false, cx, Mybounds.top, 0.0f, Player_bullet_speed, kBulletTexturePath); // straight
+			Bullet* b3 = new Bullet(3, false, cx + 15, Mybounds.top, .09f, Player_bullet_speed, kBulletTexturePath); // right diagonal
 			b1->SetScale(0.2f, 0.15f); b1->SetOrigin(); b1->setPosition(); addBullet(b1);
 			b2->SetScale(0.2f, 0.15f); b2->SetOrigin(); b2->setPosition(); addBullet(b2);
 			b3->SetScale(0.2f, 0.15f); b3->SetOrigin(); b3->setPosition(); addBullet(b3);
+			pierce = false;
 		}
 		else if (currentWeapon == weaponPierce) {
-			Bullet* b = new Bullet(6, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, Player_bullet_speed, kPierceBulletPath);
-			b->SetScale(0.01f, 0.01f); b->SetOrigin(); b->setPosition(); addBullet(b);
+			Bullet* b = new Bullet(6, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0, Player_bullet_speed, kPierceBulletPath);
+			b->SetScale(0.03f, 0.03f); b->SetOrigin(); b->setPosition(); addBullet(b);
+			pierce = true;
 		}
 		else {
-			Bullet* b = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, Player_bullet_speed, kBulletTexturePath);
+			Bullet* b = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0, Player_bullet_speed, kBulletTexturePath);
 			b->SetScale(0.2f, 0.15f); b->SetOrigin(); b->setPosition(); addBullet(b);
+			pierce = false;
 		}
 	}
-
-	//roblox damage sound puhleeeeeez?!?
+	bool getPierceFlag() {
+		return pierce;
+	}
+	//roblox damage sound puhleeeeeez?!? ok
 	void takeDamage() override {
 		if (shieldHits > 0) {
 			shieldHits--;
@@ -367,13 +395,14 @@ public:
 	}
 
 	void empShoot(FloatRect& Mybounds) {
-		if (empCount > 0) { //TODO - add emp functionality here, maybe i am inevitable sound effect
-			Bullet* b = new Bullet(20, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, Player_bullet_speed, kEmpBulletPath); 
+		if (empCount > 0) {
+			Bullet* b = new Bullet(10, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0.5f, Player_bullet_speed, kEmpBulletPath);
 			b->SetScale(0.06f, 0.06f); b->SetOrigin(); b->setPosition(); addBullet(b);
-			empCount--;
+			empCount--; 
+			dt = 0.06f;     
 		}
 	}
-
+	
 	void applyPowerUp(int t) {
 		switch (t) {
 			case puSpread: 
@@ -401,8 +430,20 @@ public:
 		drawBullets(window);
 	}
 	void update() {
+		updateExplosion();
 		for (int i = 0; i < bulletCount; i++) {
-			bullets[i]->moveUp();
+			if (empShot) {  
+				dt += 0.015;
+				bullets[i]->getSprite().setScale(dt, dt);
+				if (dt > 1) {
+					empShot = false;
+					dt = 0.01f;
+					deleteBullet(i);
+					i--;
+				}
+			}
+			else 
+			bullets[i]->getSprite().move(bullets[i]->getVx(), -bullets[i]->getVy());
 		}
 		for (int i = 0; i < bulletCount; i++) {
 			if (bullets[i]->getSprite().getGlobalBounds().top <= 0) {
@@ -424,15 +465,6 @@ public:
 	virtual void move() = 0;
 	virtual void update() = 0;
 	virtual void draw(RenderWindow& window) = 0;
-
-	void setStatus() {
-		if(health == 0)
-		   isDead = 1;
-	}
-	bool getStatus() {
-		return isDead;
-	}
-	
 	virtual ~Enemy() {}
 };
 class Drone : public Enemy {
@@ -460,6 +492,7 @@ public:
 	}
 
 	void update() override {
+		updateExplosion();
 		for (int i = 0; i < bulletCount; i++) {
 			bullets[i]->moveDown();
 		}
@@ -506,6 +539,7 @@ public:
 		}
 	}
 	void update() override {
+		updateExplosion();
 		for (int i = 0; i < bulletCount; i++) {
 			bullets[i]->moveDown();
 		}
@@ -542,7 +576,9 @@ public:
 		this->getSprite().move(getVx(), getVy());
 	}
 	inline void shoot(FloatRect Bounds)override{}
-	inline void update() override{}
+	inline void update() override{
+		updateExplosion();
+	}
 	void draw(RenderWindow& window) override {
 		Entity::draw(window);
 	}
@@ -613,8 +649,8 @@ public:
 				
 				for (int i = 0; i < 5; i++) {
 					if (i != gap) {
-						Bullet* laser = new Bullet(3, false, 112*i, Bounds.top + Bounds.height,0.5f, 2*Bullet_speed, kCruiserLaserTexturePath);
-						laser->SetScale(0.3f, -0.3f);
+						Bullet* laser = new Bullet(3, false, 112*i, Bounds.top + Bounds.height,0.5f, 4*Bullet_speed, kCruiserLaserTexturePath);
+						laser->SetScale(0.2f, -0.2f);
 						laser->setPosition();
 						addBullet(laser);
 					}
@@ -627,6 +663,7 @@ public:
 		}
 	}
 	void update() override {
+		updateExplosion();
 		for (int i = 0; i < bulletCount; i++) {
 			bullets[i]->moveDown();
 		}
@@ -680,6 +717,7 @@ public:
 		}
 	}
 	void update() override {
+		updateExplosion();
 		float dx = cos(theta) * Bullet_speed;  
 		float dy = sin(theta) * Bullet_speed;
 		for (int i = 0; i < bulletCount; i++) {
@@ -741,7 +779,7 @@ public:
 		if (!allTurretsActive()) {
 			if (clock.getElapsedTime().asSeconds() >= 2.5f) {
 
-				for (int i = 0; i < 4; i++) {
+				for (int i = 0; i < 3; i++) {
 					
 					Bullet* b = new Bullet(3, false, Bounds.left -Bounds.width/2 +i*(Bounds.width/2), Bounds.top + Bounds.height, Bullet_speed, Bullet_speed, kCruiserLaserTexturePath);//right side bullet
 					b->SetScale(0.2f, -0.15f);
@@ -759,7 +797,7 @@ public:
 		}
 	}
 	void update() override {
-		
+		updateExplosion();
 		if (!allTurretsActive()) {
 			float dx = cos(theta) * Bullet_speed;
 			float dy = sin(theta) * Bullet_speed;
@@ -825,7 +863,7 @@ public:
 		
 	}
 	void spawnSeekers(FloatRect PlayerBounds) {
-		if (minionClock.getElapsedTime().asSeconds() >= 2.5f) {
+		if (minionClock.getElapsedTime().asSeconds() >= 1.5f) {
 			if (seekerCount >= seekerCapacity) {
 				seekerCapacity = (seekerCapacity == 0) ? 10 : seekerCapacity * 2;
 				Seeker** temp = new Seeker * [seekerCapacity];
@@ -843,16 +881,13 @@ public:
 	void shoot(FloatRect Bounds) override {
 
 		if (clock.getElapsedTime().asSeconds() >= 1.5f) {
-			Bullet* bleft = new Bullet(3, false, Bounds.left, Bounds.top + Bounds.height, 0.5f, Bullet_speed, kCruiserLaserTexturePath);//left side bullet
-			Bullet* bright = new Bullet(3, false, Bounds.left + Bounds.width, Bounds.top + Bounds.height, 0.5f, Bullet_speed, kCruiserLaserTexturePath);//right side bullet
-			bleft->SetScale(0.2f, -0.15f);
-			bleft->SetOrigin();
-			bleft->setPosition();
-			bright->SetScale(0.2f, -0.15f);
-			bright->SetOrigin();
-			bright->setPosition();
-			addBullet(bright);
-			addBullet(bleft);
+			for (int i = 0; i < 3; i++) {
+				Bullet* b = new Bullet(3, false, Bounds.left - Bounds.width / 2 + i * (Bounds.width / 2)+20, Bounds.top + Bounds.height, Bullet_speed, Bullet_speed, kCruiserLaserTexturePath);//right side bullet
+				b->SetScale(0.2f, -0.15f);
+				b->SetOrigin();
+				b->setPosition();
+				addBullet(b);
+			}
 			clock.restart();
 		}
         if (laserClock.getElapsedTime().asSeconds() >= 10.f) {
@@ -870,6 +905,7 @@ public:
 	}
 
 	void update() override {
+		updateExplosion();
 		float dx = cos(theta) * Bullet_speed;
 		float dy = sin(theta) * Bullet_speed;
 		for (int i = 0; i < bulletCount; i++) {
@@ -920,60 +956,23 @@ public:
 	}
 };
 
-//void makeDrops(FloatRect enemyBound, int& dropCount, Drops**& drop) {
-//	static random_device rd;
-//	static mt19937 gen(rd());
-//	static discrete_distribution<> d({ 3,10,15,20 });
-//	String texturePath = "";
-//	int outcome = d(gen);
-//	switch (outcome) {
-//	case 0:
-//		cout << "Nuke dropped ========================\n";
-//		break;
-//	case 1:
-//		cout << "Pierce dropped ========================\n";
-//		break;
-//
-//	case 2:
-//		cout << "Heart dropped ========================\n";
-//		texturePath = kheartDropTexturePath;
-//		break;
-//
-//	case 3:
-//		cout << "Spread dropped ========================\n";
-//		break;
-//	}
-//	if (texturePath=="") return;
-//
-//	Drops** temp = new Drops * [dropCount + 1];
-//	for (int i = 0; i < dropCount; i++) {
-//		temp[i] = drop[i];
-//	}
-//	heartTex.loadFromFile(texturePath);
-//	temp[dropCount] = new Drops(enemyBound.left, enemyBound.top, 0, Bullet_speed,heartTex);
-//	delete[] drop;
-//	drop = temp;
-//	dropCount++;
-//}
-
 class PowerUp : public Entity {
 	int powerType;
 public:
 	PowerUp(float x, float y, int t) : Entity(x, y, 0, 0.15f), powerType(t) {
 		String path;
-		float s = 0.1f;
+		float s = 0.02f;
 		if (t == puSpread) { 
 			path = resolvePath("Images/Drops/spread.png"); 
-			s = 0.08f; 
+			
 		} else if (t == puPierce) { 
 			path = resolvePath("Images/Drops/piercing.png"); 
-			s = 0.07f; 
+		
 		} else if (t == puShield) { 
 			path = resolvePath("Images/Drops/shield.png"); 
-			s = 0.025f; 
+			
 		} else { 
 			path = resolvePath("Images/Drops/emp.png"); 
-			s = 0.055f; 
 		}
 		loadTexture(path);
 		SetScale(s, s);
@@ -994,7 +993,7 @@ public:
 	}
 };
 
-// what did you comment up there bro, what discombombulating abomination is that function 
+// what did you comment up there bro, what discombombulating abomination is that function ;-;
 void spawnPowerup(float x, float y, PowerUp**& powerups, int& powerupCount) {
 	bool isEmp = false;
 	if (rand() % 100 < 5) { //could be more efficient...
@@ -1026,7 +1025,7 @@ void spawnPowerup(float x, float y, PowerUp**& powerups, int& powerupCount) {
 		delete[] powerups;
 		powerups = temp;
 		powerupCount++;
-	} //need to make this more efficient, this recreation again and again is terrible
+	} //need to make this more efficient, this recreation again and again is terrible.Dynamic arrays suck
 }
 
 class Star {
@@ -1198,8 +1197,10 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 				FloatRect dropPosition;
 				for (int s = 0; s < M->getSeekerCount(); s++) {
 					if (bulletBounds.intersects(seekers[s]->getSprite().getGlobalBounds())) {
-						Me.deleteBullet(i);
-						bulletDeleted = true;
+						if (!Me.getPierceFlag()) {
+							Me.deleteBullet(i);
+							bulletDeleted = true;
+						}
 						seekers[s]->takeDamage();
 						dropPosition = seekers[s]->getSprite().getGlobalBounds();
 						M->destroySeekers(s);
@@ -1215,9 +1216,14 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			}
 			else {
 				if (bulletBounds.intersects(enemies[k]->getSprite().getGlobalBounds())) {
-					Me.deleteBullet(i);
-					bulletDeleted = true;
+					if (!Me.getPierceFlag() || Me.pierceCount >= 2) {
+						Me.deleteBullet(i);
+						bulletDeleted = true;
+						Me.pierceCount = 0;
+					}
 					enemies[k]->takeDamage();
+					Me.pierceCount++;
+
 				}
 			}
 		}
@@ -1230,18 +1236,19 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			Seeker** seekers = M->getSeeker();
 			for (int i = 0; i < M->getSeekerCount(); i++) {
 				if (seekers[i]->getSprite().getGlobalBounds().intersects(playerBounds)) {
-					seekers[i]->destroy();
+					seekers[i]->takeDamage();
 					Me.instantKill();
+					Me.takeDamage();
 				}
 			}
 		}
 		else {
 			if (enemies[k]->getSprite().getGlobalBounds().intersects(playerBounds)) {
-				enemies[k]->destroy();
+				enemies[k]->takeDamage();
 				for (int r = enemies[k]->getBulletCount() - 1; r >= 0; r--)
 					enemies[k]->deleteBullet(r);
 				Me.instantKill();
-				
+				Me.takeDamage();
 			}
 		}
 
@@ -1318,7 +1325,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 
 enum class GameMode {Survival,Arcade};
 enum class GameState {
-	Playing, Main_Menu, Paused,Game_Over
+	Playing, Main_Menu, Paused,Game_Over,Game_win
 };
 void InputManager(Player& Me, FloatRect Mybounds, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount) {
 	static int keyFrame = 0;
@@ -1344,18 +1351,20 @@ void InputManager(Player& Me, FloatRect Mybounds, Enemy**& enemies, int& enemyCo
 	static bool nWasPressed = false;
 	bool nNowPressed = Keyboard::isKeyPressed(Keyboard::N);
 	if (nNowPressed && !nWasPressed && Me.empCount > 0) {
-		Me.empCount--;
+		Me.empShot = true;
 		Me.empShoot(Mybounds);
 		for (int i = enemyCount - 1; i >= 0; i--) {
 			if (enemies[i]->getStatus()) continue;
 			if (dynamic_cast<Cruiser*>(enemies[i]) || dynamic_cast<TwinCannon*>(enemies[i]) || dynamic_cast<MotherShip*>(enemies[i])) {
 				for (int d = 0; d < 15; d++) enemies[i]->takeDamage();
-			} else {
+			} 
+			else {
 				Vector2f pos = enemies[i]->getSprite().getPosition();
 				spawnPowerup(pos.x, pos.y, powerups, powerupCount);
 				deleteEnemy(i, enemies, enemyCount);
 			}
 		}
+		
 	}
 	nWasPressed = nNowPressed;
 }
@@ -1551,6 +1560,7 @@ public:
 	Screen pauseScreen;
 	Screen mainScreen;
 	Screen gameOver;
+	Screen gameWin;
 	Player* player;
 	Enemy** enemies;
 	int enemyCount;
@@ -1562,7 +1572,7 @@ public:
 	Text fpsNum;
 	Font font;
 
-	GameObject(GameState s,RenderWindow &window) : state(s),pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), mainScreen(window, "Main Menu", "Arcade Mode", "Survival Mode", "Exit"),gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit") {
+	GameObject(GameState s,RenderWindow &window) : state(s),pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), mainScreen(window, "Main Menu", "Arcade Mode", "Survival Mode", "Exit"),gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit"),gameWin(window, "You Win!", "Play Again", "Back To Main Menu", "Exit") {
 		player = nullptr;
 		enemies = nullptr;
 		enemyCount = 0;
@@ -1590,6 +1600,9 @@ public:
 			if (enemyCount == 0) {
 				wave++;
 				cout << "Wave No: " << wave << endl;
+				if (wave > 15) {
+					state = GameState::Game_win;
+				}
 				spawnWave(enemies, enemyCount, Mybounds,mode);
 			}
 			collisionsManager(*player, enemies, enemyCount, powerups, powerupCount);
@@ -1641,7 +1654,6 @@ public:
 			fps.update();
 			fpsNum.setString(sf::String(std::to_string(fps.getFPS())));
 			window.draw(fpsNum);
-
 			window.display();
 		}
 		if (state == GameState::Paused) {
@@ -1656,6 +1668,9 @@ public:
 			delete player;
 			player = nullptr;
 			playGameOver(window);
+		}
+		if (state == GameState::Game_win) {
+			playGameWin(window);
 		}
 	}
 	void playPaused(RenderWindow& window)
@@ -1744,6 +1759,42 @@ public:
 		window.clear();
 		gameOver.update(clock.restart().asSeconds(), window);
 		gameOver.draw(window);
+		window.display();
+	}
+	void playGameWin(RenderWindow& window)
+	{
+		static bool wasPressed = false;
+		bool nowPressed = Mouse::isButtonPressed(Mouse::Left);
+
+		if (nowPressed && !wasPressed && gameWin.hovered != -1)
+		{
+			if (gameWin.hovered == 0) {
+				for (int i = 0; i < powerupCount; i++)
+					delete powerups[i];
+				delete[] powerups;
+				powerups = nullptr;
+				powerupCount = 0;
+				if (enemyCount != 0) {
+					for (int i = 0; i < enemyCount; i++) {
+						delete enemies[i];
+					}
+					delete[] enemies;
+					enemies = nullptr;
+					enemyCount = 0;
+					wave = 0;
+				}
+				player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+				state = GameState::Playing;
+			}
+			if (gameWin.hovered == 1) state = GameState::Main_Menu;
+			if (gameWin.hovered == 2) window.close();
+
+		}
+		wasPressed = nowPressed;
+
+		window.clear();
+		gameWin.update(clock.restart().asSeconds(), window);
+		gameWin.draw(window);
 		window.display();
 	}
 };
