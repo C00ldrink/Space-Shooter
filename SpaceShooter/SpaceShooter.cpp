@@ -507,7 +507,7 @@ public:
 		return maxHealth;
 	}
 	void setStatus() {
-			isDead = 1;
+		isDead = 1;
 	}
 	bool getStatus() {
 		return isDead;
@@ -570,6 +570,7 @@ public:
 		empShot = 0;
 		dt = 0.01;
 		audioMgr = nullptr;
+
 	}
 	void moveRight() {
 		this->getSprite().move(this->getVx(), 0);
@@ -1118,7 +1119,8 @@ public:
 };
 
 class TwinCannon :public Enemy{
-	Turret** turret;
+	Turret * lturret;
+	Turret * rturret;
 	int turretCount;
 	double theta;
 public:
@@ -1126,9 +1128,8 @@ public:
 		this->setPosition();
 		this->SetScale(twinCannon_Scale, twinCannon_Scale);
 		turretCount = 2;
-		turret = new Turret * [turretCount];
-		turret[0] = new Turret{this->getSprite().getGlobalBounds().left - this->getSprite().getGlobalBounds().width, this->getSprite().getGlobalBounds().top , 0, 0, 5, kLeftTurretTexturePath};
-		turret[1] = new Turret{this->getSprite().getGlobalBounds().left + this->getSprite().getGlobalBounds().width, this->getSprite().getGlobalBounds().top, 0, 0, 5, kRightTurretTexturePath};
+		lturret = new Turret{this->getSprite().getGlobalBounds().left - this->getSprite().getGlobalBounds().width, this->getSprite().getGlobalBounds().top , 0, 0, 5, kLeftTurretTexturePath};
+		rturret = new Turret{this->getSprite().getGlobalBounds().left + this->getSprite().getGlobalBounds().width, this->getSprite().getGlobalBounds().top, 0, 0, 5, kRightTurretTexturePath};
 		this->SetOrigin();
 		theta = 0;
 	}
@@ -1137,47 +1138,38 @@ public:
 	}
 
 	inline void move() override {}
-	bool allTurretsActive() {
-
-		for (int i = 0; i < turretCount; i++)
-			if (!turret[i]->getStatus()) return true;
+	bool hasActiveTurrets() {
+		if (lturret && lturret->getStatus() == false) return true;
+		if (rturret && rturret->getStatus() == false) return true;
 		return false;
 	}
 	void Homing(FloatRect PlayerBounds) {
-		if (allTurretsActive()) {
-			for (int i = 0; i < turretCount; i++) {
-				turret[i]->Homing(PlayerBounds);
-			}
+		if (lturret && !lturret->getStatus()) {
+			lturret->Homing(PlayerBounds);
 		}
-		else {
+		if (rturret && !rturret->getStatus()) {
+			rturret->Homing(PlayerBounds);
+		}
+		if (!lturret && !rturret) {
 			theta = atan2((double)(PlayerBounds.top - getyPos()), (double)(PlayerBounds.left - getxPos()));
 		}
 	}
 	void shoot(FloatRect Bounds) override {
 
-		if (!allTurretsActive()) {
-			if (clock.getElapsedTime().asSeconds() >= 2.5f) {
-
-				for (int i = 0; i < 3; i++) {
-					
-					Bullet* b = new Bullet(3, false, Bounds.left -Bounds.width/2 +i*(Bounds.width/2), Bounds.top + Bounds.height, Bullet_speed, Bullet_speed, kCruiserLaserTexturePath);//right side bullet
-					b->SetScale(0.2f, -0.15f);
-					b->SetOrigin();
-					b->setPosition();
-					addBullet(b);
-				}
-				clock.restart();
-			}
+		if (!hasActiveTurrets()) {
 		}
 		else {
-			for (int i = 0; i < turretCount; i++) {
-				turret[i]->shoot(turret[i]->getSprite().getGlobalBounds());
+			if(lturret && !lturret->getStatus()) {
+				lturret->shoot(lturret->getSprite().getGlobalBounds());
+			}
+			if(rturret && !rturret->getStatus()) {
+				rturret->shoot(rturret->getSprite().getGlobalBounds());
 			}
 		}
 	}
 	void update() override {
 		updateExplosion();
-		if (!allTurretsActive()) {
+		if (!hasActiveTurrets()) {
 			float dx = cos(theta) * Bullet_speed;
 			float dy = sin(theta) * Bullet_speed;
 			for (int i = 0; i < bulletCount; i++) {
@@ -1192,15 +1184,26 @@ public:
 				}
 			}
 		}
-		else {	
-			for (int i = 0; i < turretCount; i++) {
-				turret[i]->update();
-			}
+		else {
+			if (lturret) lturret->update();
+			if (rturret) rturret->update();
 		}
 	}
 
-	Turret** getTurret() {
-		return turret;
+	Turret* getLTurret() {
+		return lturret;
+	}
+	Turret* getRTurret() {
+		return rturret;
+	}
+	void destroyTurret(Turret* t) {
+		if (t == lturret) {
+			delete lturret;
+			lturret = nullptr;
+		} else if (t == rturret) {
+			delete rturret;
+			rturret = nullptr;
+		}
 	}
 	int getTurretCount() {
 		return turretCount;
@@ -1209,11 +1212,19 @@ public:
 		turretCount--;
 	}
 	void draw(RenderWindow& window) override {
-		for (int i = 0; i < turretCount; i++) {
-			turret[i]->draw(window);
-		}
+		if(rturret && !rturret->getStatus())
+		rturret->draw(window);
+		if(lturret && !lturret->getStatus())
+		lturret->draw(window);
 		Entity::draw(window);
 		drawBullets(window);
+	}
+
+	~TwinCannon() {
+		delete rturret;
+		delete lturret;
+		rturret = nullptr;
+		lturret = nullptr;
 	}
 };
 
@@ -1540,6 +1551,22 @@ void deleteEnemy(int i,T** &enemies,int &enemyCount) {
 	enemyCount--;
 	cout << "Enemy deleted\n";
 }
+
+void deleteAndDamage(FloatRect &bulletBounds, Turret* turret, TwinCannon* tc, Player &Me, bool &bulletDeleted, int &i) {
+	if (!bulletBounds.intersects(turret->getSprite().getGlobalBounds()))
+		return;
+
+	Me.deleteBullet(i);
+	bulletDeleted = true;
+	turret->takeDamage();
+	if (turret->getStatus()) {
+		Me.addScore(turret->getScoreValue());
+		tc->destroyTurret(turret);
+	}
+
+	return;
+}
+
 void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount, Asteroid** asteroids, int asteroidCount, AudioManager* audioMgr) {
 
 	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
@@ -1565,16 +1592,30 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 		// PHASE 1: Enemy bullets vs Player
 		// -------------------------------------------------------
 
-		if (TwinCannon* tc = dynamic_cast<TwinCannon*>(enemies[k])) {
-			if (tc->allTurretsActive()) {
-				Turret** turrets = tc->getTurret();
+if (TwinCannon* tc = dynamic_cast<TwinCannon*>(enemies[k])) {
+			if (tc->hasActiveTurrets()) {
+				Turret* rturret = tc->getRTurret();
+				Turret* lturret = tc->getLTurret();
 				for (int t = 0; t < tc->getTurretCount(); t++) {
-					for (int i = turrets[t]->getBulletCount() - 1; i >= 0; i--) {
-						if (turrets[t]->getBullets()[i]->getSprite().getGlobalBounds().intersects(playerBounds)) {
-							turrets[t]->deleteBullet(i);
-							Me.takeDamage();
-							playerBounds = Me.getSprite().getGlobalBounds();
-							cout << "Player hit by turret bullet\n";
+					if (lturret && lturret->getBulletCount() > 0) {
+						for (int i = lturret->getBulletCount() - 1; i >= 0; i--) {
+							if (lturret->getBullets()[i]->getSprite().getGlobalBounds().intersects(playerBounds)) {
+								lturret->deleteBullet(i);
+								Me.takeDamage();
+								playerBounds = Me.getSprite().getGlobalBounds();
+							 cout << "Player hit by turret bullet\n";
+							}
+						}
+					}
+
+					if (rturret && rturret->getBulletCount() > 0) {
+						for (int i = rturret->getBulletCount() - 1; i >= 0; i--) {
+							if (rturret->getBullets()[i]->getSprite().getGlobalBounds().intersects(playerBounds)) {
+								rturret->deleteBullet(i);
+								Me.takeDamage();
+								playerBounds = Me.getSprite().getGlobalBounds();
+							 cout << "Player hit by turret bullet\n";
+							}
 						}
 					}
 				}
@@ -1611,31 +1652,12 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			bool bulletDeleted = false;
 
 			if (TwinCannon* tc = dynamic_cast<TwinCannon*>(enemies[k])) {
-				if (tc->allTurretsActive()) {
-					Turret** turrets = tc->getTurret();
-					for (int t = 0; t < tc->getTurretCount(); t++) {
-						if (!bulletBounds.intersects(turrets[t]->getSprite().getGlobalBounds())) continue;
+				if (tc->hasActiveTurrets()) {
+					Turret* rturret = tc->getRTurret();
+					Turret* lturret = tc->getLTurret();
 
-						Me.deleteBullet(i);
-						bulletDeleted = true;
-						turrets[t]->takeDamage();
-
-						if (turrets[t]->getStatus()) {
-							for (int r = turrets[t]->getBulletCount() - 1; r >= 0; r--)
-								turrets[t]->deleteBullet(r);
-
-							Me.addScore(turrets[t]->getScoreValue());
-							delete turrets[t];
-
-							for (int s = t; s < tc->getTurretCount() - 1; s++)
-								turrets[s] = turrets[s + 1];
-							turrets[tc->getTurretCount() - 1] = nullptr;
-
-							tc->reduceTurret();
-						 cout << "Turret destroyed\n";
-						}
-						break;
-					}
+					if (lturret) deleteAndDamage(bulletBounds, lturret, tc, Me, bulletDeleted, i);
+					if (rturret) deleteAndDamage(bulletBounds, rturret, tc, Me, bulletDeleted, i);
 				}
 				else {
 					if (bulletBounds.intersects(tc->getSprite().getGlobalBounds())) {
@@ -1726,7 +1748,7 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 			M->spawnSeekers(playerBounds);
 		}
 
-		if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
+		else if (MotherShip* M = dynamic_cast<MotherShip*>(enemies[k])) {
 			Seeker** seekers = M->getSeeker();
 			for (int i = 0; i < M->getSeekerCount(); i++) {
 				seekers[i]->move();
@@ -1843,7 +1865,7 @@ void InputManager(Player& Me, FloatRect Mybounds, Enemy**& enemies, int& enemyCo
 		Me.moveUp();
 		dy = -1;
 	}
-	if (Keyboard::isKeyPressed(Keyboard::S) && Mybounds.top < windowSize.y) {
+	if (Keyboard::isKeyPressed(Keyboard::S) && Mybounds.top + Mybounds.width / 2 < windowSize.y - 50.f) {
 		Me.moveDown();
 		dy = 1;
 	}
@@ -2377,7 +2399,7 @@ public:
 				window.draw(healthBarLabel);
 			}
 			window.draw(waveText);
-			window.draw(fpsNum);
+			// window.draw(fpsNum);
 			window.display();
 		}
 		if (state == GameState::Paused) {
