@@ -58,6 +58,13 @@ const int SEEKERS_START = 4;   // wave at which seekers begin spawning
 const int VIPERS_START = 7;
 int wave = 0;
 
+bool empActive = false;
+Clock empTimer;
+const float EMP_DURATION = 1.5f;
+bool empEffectActive = false;
+Clock empEffectTimer;
+const float EMP_EFFECT_DURATION = 2.0f;
+
 const int SCORE_DRONE = 10;
 const int SCORE_VIPER = 15;
 const int SCORE_SEEKER = 20;
@@ -101,8 +108,169 @@ const int ASTEROID_MAX_COUNT = 5;
 
 const String kPlayerShieldTexturePath = resolvePath("Images/Player/Shield.png");
 //replace this with your font path 
-const String FontPath = resolvePath("/assets/fonts/Orbitron Medium.ttf");
+const String FontPath = resolvePath("/assets/fonts/Orbitron-Medium.ttf");
+
+const String kAudioRoot = resolvePath("Audios/");
+const String kMenuMusicPath = kAudioRoot + "menu.mp3";
+const String kGameplayMusicPath = kAudioRoot + "menu.mp3";
+const String kShootSoundPath = kAudioRoot + "normalBullet.mp3";
+const String kSpreadShootSoundPath = kAudioRoot + "spreadBullet.mp3";
+const String kPierceShootSoundPath = kAudioRoot + "piercingBullet.mp3";
+const String kExplosionSoundPath = kAudioRoot + "damage.mp3";
+const String kDamageSoundPath = kAudioRoot + "damage.mp3";
+const String kPowerUp1SoundPath = kAudioRoot + "powerup1.mp3";
+const String kPowerUp2SoundPath = kAudioRoot + "powerup2.mp3";
+const String kPowerUp3SoundPath = kAudioRoot + "powerup3.mp3";
+const String kPowerUp4SoundPath = kAudioRoot + "powerup4.mp3";
+const String kEmpSoundPath = kAudioRoot + "emp.mp3";
+const String kCruiserSoundPath = kAudioRoot + "cruiser.mp3";
+const String kMotherShipSoundPath = kAudioRoot + "mothership.mp3";
+const String kTwinCannonsSoundPath = kAudioRoot + "twincannons.mp3";
+
 std::map<String, Texture> textureCache;
+std::map<String, SoundBuffer*> soundBufferCache;
+
+enum SoundType {
+    SOUND_SHOOT = 0,
+    SOUND_SPREAD_SHOOT,
+    SOUND_PIERCE_SHOOT,
+    SOUND_EXPLOSION,
+    SOUND_DAMAGE,
+    SOUND_POWERUP1,
+    SOUND_POWERUP2,
+    SOUND_POWERUP3,
+    SOUND_POWERUP4,
+    SOUND_EMP,
+    SOUND_CRUISER,
+    SOUND_MOTHERSHIP,
+    SOUND_TWIN_CANNONS,
+    SOUND_MENU,
+    SOUND_GAMEPLAY,
+    SOUND_COUNT
+};
+
+class AudioManager {
+private:
+    SoundBuffer** soundBuffers;
+    Sound** sounds;
+    int soundCount;
+    Sound* currentMusic;
+    
+    void loadSound(int index, const String& path) {
+        if (index >= soundCount) return;
+        soundBuffers[index] = new SoundBuffer();
+        if (!soundBuffers[index]->loadFromFile(path)) {
+            std::cout << "Failed to load sound: " << path.toAnsiString() << std::endl;
+            delete soundBuffers[index];
+            soundBuffers[index] = nullptr;
+            return;
+        }
+        sounds[index] = new Sound(*soundBuffers[index]);
+    }
+    
+public:
+    AudioManager() : soundCount(SOUND_COUNT), currentMusic(nullptr) {
+        soundBuffers = new SoundBuffer*[soundCount];
+        sounds = new Sound*[soundCount];
+        for (int i = 0; i < soundCount; i++) {
+            soundBuffers[i] = nullptr;
+            sounds[i] = nullptr;
+        }
+        
+        loadSound(SOUND_SHOOT, kShootSoundPath);
+        loadSound(SOUND_SPREAD_SHOOT, kSpreadShootSoundPath);
+        loadSound(SOUND_PIERCE_SHOOT, kPierceShootSoundPath);
+        loadSound(SOUND_EXPLOSION, kExplosionSoundPath);
+        loadSound(SOUND_DAMAGE, kDamageSoundPath);
+        loadSound(SOUND_POWERUP1, kPowerUp1SoundPath);
+        loadSound(SOUND_POWERUP2, kPowerUp2SoundPath);
+        loadSound(SOUND_POWERUP3, kPowerUp3SoundPath);
+        loadSound(SOUND_POWERUP4, kPowerUp4SoundPath);
+        loadSound(SOUND_EMP, kEmpSoundPath);
+        loadSound(SOUND_CRUISER, kCruiserSoundPath);
+        loadSound(SOUND_MOTHERSHIP, kMotherShipSoundPath);
+        loadSound(SOUND_TWIN_CANNONS, kTwinCannonsSoundPath);
+        loadSound(SOUND_MENU, kMenuMusicPath);
+        loadSound(SOUND_GAMEPLAY, kGameplayMusicPath);
+    }
+    
+    ~AudioManager() {
+        for (int i = 0; i < soundCount; i++) {
+            delete sounds[i];
+            delete soundBuffers[i];
+        }
+        delete[] sounds;
+        delete[] soundBuffers;
+    }
+    
+    void playSound(SoundType type) {
+        if (type < 0 || type >= soundCount || sounds[type] == nullptr) return;
+        if (sounds[type]->getStatus() == SoundSource::Playing) {
+            sounds[type]->stop();
+        }
+        sounds[type]->play();
+    }
+    
+    void playShoot() { playSound(SOUND_SHOOT); }
+    void playSpreadShoot() { playSound(SOUND_SPREAD_SHOOT); }
+    void playPierceShoot() { playSound(SOUND_PIERCE_SHOOT); }
+    void playExplosion() { playSound(SOUND_EXPLOSION); }
+    void playDamage() { playSound(SOUND_DAMAGE); }
+    void playPowerUp(int type = 1) { 
+        if (type >= 1 && type <= 4) {
+            playSound((SoundType)(SOUND_POWERUP1 + type - 1));
+        }
+    }
+    void playEmp() {
+        if (sounds[SOUND_EMP]) {
+            sounds[SOUND_EMP]->setVolume(400.f);
+        }
+        playSound(SOUND_EMP);
+    }
+    void playCruiser() { playSound(SOUND_CRUISER); }
+    void playMotherShip() { playSound(SOUND_MOTHERSHIP); }
+    void playTwinCannons() { playSound(SOUND_TWIN_CANNONS); }
+    
+    void playMusic(SoundType type, bool loop = true) {
+        if (type < 0 || type >= soundCount || sounds[type] == nullptr) return;
+        if (currentMusic != nullptr && currentMusic->getStatus() == SoundSource::Playing) {
+            currentMusic->stop();
+        }
+        sounds[type]->play();
+        currentMusic = sounds[type];
+    }
+    
+    void playMenuMusic() { playMusic(SOUND_MENU); }
+    void playGameplayMusic() { playMusic(SOUND_GAMEPLAY); }
+    void playBossSound(int waveNumber) {
+		playMusic(SOUND_CRUISER);
+		(void)waveNumber;
+	}
+
+	void switchToGameplayMusic() {
+		stopMusic();
+		playMusic(SOUND_GAMEPLAY);
+	}
+    
+    void stopMusic() {
+        if (currentMusic != nullptr) {
+            currentMusic->stop();
+            currentMusic = nullptr;
+        }
+    }
+    
+    void pauseMusic() {
+        if (currentMusic != nullptr && currentMusic->getStatus() == SoundSource::Playing) {
+            currentMusic->pause();
+        }
+    }
+    
+    void resumeMusic() {
+        if (currentMusic != nullptr && currentMusic->getStatus() == SoundSource::Paused) {
+            currentMusic->play();
+        }
+    }
+};
 
 
 float RandomValue(float n) {
@@ -378,6 +546,8 @@ public:
 	int dashTrailCount;
 	Clock dashTrailClock;
 
+	AudioManager* audioMgr;
+
 	Player(int health,float xPos, float yPos, float V_x, float V_y, const String& filename)
 		: ShootableCharacter(xPos, yPos, V_x, V_y,health), currentWeapon(weaponStandard), shieldHits(0), empCount(1), score(0), scoreMultiplier(1), isInvincible(false), dashDistance(150.f), dashTrailCount(0) {
 		this->loadTexture(filename);
@@ -399,6 +569,7 @@ public:
 		pierceCount = 0;
 		empShot = 0;
 		dt = 0.01;
+		audioMgr = nullptr;
 	}
 	void moveRight() {
 		this->getSprite().move(this->getVx(), 0);
@@ -423,29 +594,40 @@ public:
 			b2->SetScale(0.2f, 0.15f); b2->SetOrigin(); b2->setPosition(); addBullet(b2);
 			b3->SetScale(0.2f, 0.15f); b3->SetOrigin(); b3->setPosition(); addBullet(b3);
 			pierce = false;
+			if (audioMgr) 
+				audioMgr->playSpreadShoot();
 		}
 		else if (currentWeapon == weaponPierce) {
 			Bullet* b = new Bullet(6, true, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0, Player_bullet_speed, kPierceBulletPath);
 			b->SetScale(0.03f, 0.03f); b->SetOrigin(); b->setPosition(); addBullet(b);
 			pierce = true;
+			if (audioMgr) 
+				audioMgr->playPierceShoot();
 		}
 		else {
 			Bullet* b = new Bullet(3, false, Mybounds.left + (Mybounds.width / 2.0f), Mybounds.top, 0, Player_bullet_speed, kBulletTexturePath);
 			b->SetScale(0.2f, 0.15f); b->SetOrigin(); b->setPosition(); addBullet(b);
 			pierce = false;
+			if (audioMgr) audioMgr->playShoot();
 		}
 	}
 	bool getPierceFlag() {
 		return pierce;
 	}
-	//roblox damage sound puhleeeeeez?!? ok
+	void setAudioManager(AudioManager* am) {
+		audioMgr = am;
+	}
+	
 	void takeDamage() override {
-		if (isInvincible) return;
+		if (isInvincible) 
+			return;
 		if (shieldHits > 0) {
 			shieldHits--;
 			return;
 		}
 		resetMultiplier();
+		if (audioMgr) 
+			audioMgr->playDamage();
 		ShootableCharacter::takeDamage();
 	}
 
@@ -461,8 +643,15 @@ public:
 
 	void empShoot(FloatRect& Mybounds) {
 		if (empCount > 0) {
-			empCount--; 
-			dt = 0.06f;     
+			empCount--;
+			dt = 0.06f;
+			empShot = true;
+			empActive = true;
+			empEffectActive = true;
+			empTimer.restart();
+			empEffectTimer.restart();
+			if (audioMgr)
+				audioMgr->playEmp();
 		}
 	}
 	
@@ -483,6 +672,8 @@ public:
 				if (empCount < 3) empCount++;
 				break;
 		}
+		if (audioMgr) 
+			audioMgr->playPowerUp(t + 1);
 	}
 
 	Bullet** getPlayerBullets() {
@@ -588,11 +779,14 @@ public:
 				dt = 0.01f;
 			}
 		}
+		if (empEffectActive && empEffectTimer.getElapsedTime().asSeconds() >= EMP_EFFECT_DURATION) {
+			empEffectActive = false;
+		}
 		for (int i = 0; i < bulletCount; i++) {
 			bullets[i]->getSprite().move(bullets[i]->getVx(), -bullets[i]->getVy());
 		}
 		for (int i = 0; i < bulletCount; i++) {
-			if (empShot) break; // don't delete EMP bullet during animation
+			if (empShot) break;
 			if (bullets[i]->getSprite().getGlobalBounds().top <= 0) {
 				this->deleteBullet(i);
 				i--;
@@ -607,8 +801,9 @@ public:
 
 class Enemy : public ShootableCharacter {
 public:
+	AudioManager* audioMgr;
 	Enemy(float x, float y, float Vy, float Vx, int health, const String& filename)
-		: ShootableCharacter(x, y, Vx, Vy,health) {
+		: ShootableCharacter(x, y, Vx, Vy,health), audioMgr(nullptr) {
 		isDead = 0;
 		this->loadTexture(filename);
 	}
@@ -622,6 +817,9 @@ public:
 	virtual ~Enemy() {}
 	float getHealth() {
 		return health;
+	}
+	void setAudioManager(AudioManager* am) {
+		audioMgr = am;
 	}
 
 };
@@ -1048,6 +1246,7 @@ public:
 		
 	}
 	void spawnSeekers(FloatRect PlayerBounds) {
+		if (empEffectActive) return;
 		if (minionClock.getElapsedTime().asSeconds() >= 1.5f) {
 			if (seekerCount >= seekerCapacity) {
 				seekerCapacity = (seekerCapacity == 0) ? 10 : seekerCapacity * 2;
@@ -1341,7 +1540,7 @@ void deleteEnemy(int i,T** &enemies,int &enemyCount) {
 	enemyCount--;
 	cout << "Enemy deleted\n";
 }
-void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount, Asteroid** asteroids, int asteroidCount) {
+void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**& powerups, int& powerupCount, Asteroid** asteroids, int asteroidCount, AudioManager* audioMgr) {
 
 	FloatRect playerBounds = Me.getSprite().getGlobalBounds();
 
@@ -1350,10 +1549,14 @@ void collisionsManager(Player& Me, Enemy**& enemies, int& enemyCount, PowerUp**&
 		if (!enemies[k]) continue;
 
 		if (enemies[k]->getStatus()) {
-			Vector2f pos = enemies[k]->getSprite().getPosition(); //try spawning powerup
+			bool wasBoss = (dynamic_cast<Cruiser*>(enemies[k]) || dynamic_cast<TwinCannon*>(enemies[k]) || dynamic_cast<MotherShip*>(enemies[k]));
+			Vector2f pos = enemies[k]->getSprite().getPosition();
 			spawnPowerup(pos.x, pos.y, powerups, powerupCount);
 			Me.addScore(enemies[k]->getScoreValue());
 			deleteEnemy(k, enemies, enemyCount);
+			if (wasBoss && audioMgr) {
+				audioMgr->switchToGameplayMusic();
+			}
 			k--;
 			continue;
 		}
@@ -1660,15 +1863,17 @@ void InputManager(Player& Me, FloatRect Mybounds, Enemy**& enemies, int& enemyCo
 	keyFrame++;
 
 	static bool nWasPressed = false;
+	static bool empUsedThisCycle = false;
 	bool nNowPressed = Keyboard::isKeyPressed(Keyboard::N);
 	if (nNowPressed && !nWasPressed && Me.empCount > 0) {
 		Me.empShot = true;
 		Me.empShoot(Mybounds);
+		empUsedThisCycle = true;
 		for (int i = enemyCount - 1; i >= 0; i--) {
 			if (enemies[i]->getStatus()) continue;
 			if (dynamic_cast<Cruiser*>(enemies[i]) || dynamic_cast<TwinCannon*>(enemies[i]) || dynamic_cast<MotherShip*>(enemies[i])) {
 				for (int d = 0; d < 15; d++) enemies[i]->takeDamage();
-			} 
+			}
 			else {
 				Vector2f pos = enemies[i]->getSprite().getPosition();
 				spawnPowerup(pos.x, pos.y, powerups, powerupCount);
@@ -1950,15 +2155,18 @@ public:
 
 	int survivalHighScore;
 	int arcadeHighScore;
+	AudioManager* audioManager;
+	GameState previousState;
 
-	GameObject(GameState s,RenderWindow &window) : 
-		state(s), pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"), 
+	GameObject(GameState s,RenderWindow &window) :
+		state(s), pauseScreen(window,"Paused","Continue","Back To Main Menu","Exit"),
 		gameOver(window, "Game Over", "Retry", "Back To Main Menu", "Exit"),
-		gameWin(window, "You Win!", "Play Again", "Back To Main Menu", "Exit"), 
-		survivalHighScore(0), arcadeHighScore(0) {
+		gameWin(window, "You Win!", "Play Again", "Back To Main Menu", "Exit"),
+		survivalHighScore(0), arcadeHighScore(0), audioManager(nullptr), previousState(GameState::Playing) {
 
 		loadTextures();
 		loadHighScores();
+		audioManager = new AudioManager();
 		player = nullptr;
 		enemies = nullptr;
 		enemyCount = 0;
@@ -2015,6 +2223,7 @@ public:
 			delete asteroids[i];
 		delete[] asteroids;
 		delete mainMenuScreen;
+		delete audioManager;
 	}
 
 	void loadHighScores() {
@@ -2035,21 +2244,39 @@ public:
 	}
 
 	void startGame(RenderWindow &window) {
+		if (state != previousState) {
+			if (state == GameState::Main_Menu) {
+				audioManager->playMenuMusic();
+			}
+			else if (state == GameState::Playing) {
+				audioManager->playGameplayMusic();
+			}
+			else if (state == GameState::Paused) {
+				audioManager->pauseMusic();
+			}
+			else if (state == GameState::Game_Over || state == GameState::Game_win) {
+				audioManager->stopMusic();
+			}
+			previousState = state;
+		}
 
 		if (state == GameState::Playing) {
 			FloatRect Mybounds = player->getSprite().getGlobalBounds();
 			InputManager(*player, Mybounds, enemies, enemyCount, powerups, powerupCount);
 			player->update();
 			player->updateDash();
-			if (enemyCount == 0) {
+			if (enemyCount == 0 && !empEffectActive) {
 				wave++;
-				cout << "Wave No: " << wave << endl;
+			 cout << "Wave No: " << wave << endl;
 				if (wave > 15) {
 					state = GameState::Game_win;
 				}
 				spawnWave(enemies, enemyCount, Mybounds,mode);
+				if (mode == GameMode::Arcade && (wave == 5 || wave == 10 || wave == 15)) {
+					audioManager->playBossSound(wave);
+				}
 			}
-			collisionsManager(*player, enemies, enemyCount, powerups, powerupCount, asteroids, asteroidCount);
+			collisionsManager(*player, enemies, enemyCount, powerups, powerupCount, asteroids, asteroidCount, audioManager);
 			updateAsteroids(asteroids, asteroidCount);
 			if (player->getStatus()) {
 				int currentScore = player->getScore();
@@ -2220,6 +2447,7 @@ public:
 				asteroidCount = 0;
 			}
 			player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+			player->setAudioManager(audioManager);
 			spawnAsteroids(asteroids, asteroidCount);
 			state = GameState::Playing;
 		}
@@ -2263,6 +2491,7 @@ public:
 					asteroidCount = 0;
 				}
 				player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+				player->setAudioManager(audioManager);
 				spawnAsteroids(asteroids, asteroidCount);
 				state = GameState::Playing;
 			}
@@ -2300,6 +2529,7 @@ public:
 					wave = 0;
 				}
 				player = new Player(5, windowSize.x / 2, windowSize.y / 2, .4f, .4f, kPlayerTexturePath);
+				player->setAudioManager(audioManager);
 				state = GameState::Playing;
 			}
 			if (gameWin.hovered == 1) state = GameState::Main_Menu;
@@ -2317,6 +2547,7 @@ public:
 
 int main() {
 	RenderWindow window(VideoMode(560, 854), "Space Shooter", Style::Close);
+	window.setFramerateLimit(800);
 	windowSize = window.getSize();
 
 	GameObject SpaceShooter(GameState::Main_Menu,window);

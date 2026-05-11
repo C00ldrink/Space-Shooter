@@ -5,7 +5,4 @@ Bhai ye game he
 - lil bro dont call me lil bro
 
 TODO:
-- Audio
-- Check if piercing bullets pierce asteroid
-- asteroid segmentation
-- Player is invincible, gotta fix that.
+- Fix the damage sound
